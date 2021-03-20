@@ -647,7 +647,7 @@ Eureka采用CS的设计架构，Eureka Server作为服务注册功能的服务�
 
 在服务注册和发现中，有一个注册中心。当服务器启动的时候，会把当前自己服务器的信息，比如服务器地址通讯地址等以别名方式注册到注册中心中。另一方（消费者|服务提供者），以该别名的方式去注册中心上获取到实际的服务通讯地址，然后再实现本地RPC调用远程框架核心设计思想：在于注册中心，因为使用注册中心管理每个服务与服务之间的一个依赖关系（服务治理概念）。在任何RPC远程框架中，都会有一个注册中心（存放服务地址相关信息（接口地址））。
 
-![Eureka系统架构与Dubbo架构](https://github.com/jackhusky/SpringCloud/blob/main/images/Eureka系统架构与Dubbo架构.png)
+![Eureka系统架构与Dubbo架构](https://github.com/jackhusky/springcloud/blob/master/images/Eureka%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84%E4%B8%8EDubbo%E6%9E%B6%E6%9E%84.png)
 
 ### Eureka两个组件
 
@@ -777,7 +777,7 @@ public class PaymentMain8001 {
 
 启动Eureka服务后访问http://localhost:7001/
 
-![eureka截图1](https://github.com/jackhusky/SpringCloud/blob/main/images/eureka截图1.png)
+![eureka截图1.png](https://github.com/jackhusky/springcloud/blob/master/images/eureka%E6%88%AA%E5%9B%BE1.png)
 
 服务消费者 cloud-consumer-order80 按照 cloud-provider-payment8001 配置即可注册到Eureka服务中。
 
@@ -785,7 +785,7 @@ public class PaymentMain8001 {
 
 原理：
 
-![eureka集群](https://github.com/jackhusky/SpringCloud/blob/main/docs/images/eureka集群.png)
+![eureka集群](https://github.com/jackhusky/springcloud/blob/master/images/eureka%E9%9B%86%E7%BE%A4.pngg)
 
 **问题：微服务RPC远程服务调用最核心的是什么？**
 
