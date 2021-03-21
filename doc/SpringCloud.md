@@ -1258,3 +1258,5 @@ Zookeeper临时节点，有就是有，没有就是没有
 
 ![保证一致性CP](https://github.com/jackhusky/springcloud/blob/master/images/保证一致性CP.png)
 
+## Ribbon负载均衡调用
+
