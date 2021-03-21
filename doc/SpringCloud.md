@@ -785,7 +785,7 @@ public class PaymentMain8001 {
 
 原理：
 
-![eureka集群](https://github.com/jackhusky/springcloud/blob/master/images/eureka%E9%9B%86%E7%BE%A4.pngg)
+![eureka集群](https://github.com/jackhusky/springcloud/blob/master/images/eureka%E9%9B%86%E7%BE%A4.png)
 
 **问题：微服务RPC远程服务调用最核心的是什么？**
 
@@ -1054,7 +1054,207 @@ eureka:
 
 启动cloud-eureka-server7001、cloud-eureka-server7002、cloud-provider-payment8001，再停止生产者客户端cloud-provider-payment8001后发现cloud-provider-payment8001被剔除了
 
+## Zookeeper服务注册与发现
 
+新建cloud-provider-payment8004工程
 
+pom.xml
 
+~~~xml
+    <dependencies>
+        <dependency><!-- 引用自己定义的api通用包，可以使用Payment支付Entity -->
+            <groupId>com.atguigu.springcloud</groupId>
+            <artifactId>cloud-api-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!--监控-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!--SpringBoot整合Zookeeper客户端-->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-zookeeper-discovery</artifactId>
+            <exclusions>
+                <!--先排除自带的zookeeper3.5.3-->
+                <exclusion>
+                    <artifactId>zookeeper</artifactId>
+                    <groupId>org.apache.zookeeper</groupId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!--添加zookeeper3.4.14版本-->
+        <dependency>
+            <groupId>org.apache.zookeeper</groupId>
+            <artifactId>zookeeper</artifactId>
+            <version>3.4.14</version>
+            <exclusions>
+                <exclusion>
+                    <artifactId>slf4j-log4j12</artifactId>
+                    <groupId>org.slf4j</groupId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!--热部署-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+~~~
+
+application.yml
+
+~~~yaml
+server:
+  port: 8004
+
+spring:
+  application:
+    name: cloud-payment-service
+
+  cloud:
+    zookeeper:
+      connect-string: 192.168.44.139:2181
+~~~
+
+主启动类：
+
+~~~java
+@SpringBootApplication
+@EnableDiscoveryClient
+public class Payment8004 {
+    
+    public static void main(String[] args) {
+        SpringApplication.run(Payment8004.class, args);
+    }
+}
+~~~
+
+controller
+
+```java
+@RestController
+@Slf4j
+public class PaymentController {
+
+    @Value("${server.port}")
+    private String serverPort;
+
+    @RequestMapping(value = "/payment/zk")
+    public String paymentzk() {
+        return "Spring Cloud with zookeeper:" + serverPort + "\t" + UUID.randomUUID().toString();
+    }
+}
+```
+
+调用接口localhost:8004/payment/zk正常返回，且服务注册到zookeeper
+
+![服务注册到zookeeper](https://github.com/jackhusky/springcloud/blob/master/images/服务注册到zookeeper.png)
+
+节点是临时节点
+
+![zookeeper临时节点](https://github.com/jackhusky/springcloud/blob/master/images/zookeeper临时节点.png)
+
+新建cloud-consumerzk-order80工程，按照cloud-provider-payment8004的配置注册到zookeeper中
+
+测试接口通过：localhost/consumer/payment/zk
+
+## Consul服务注册与发现
+
+### 什么是Consul
+
+Consul是HashiCorp公司推出的开源工具，Consul由Go语言开发，部署起来非常容易，只需要极少的可执行程序和配置文件，具有绿色、轻量级的特点。Consul是分布式的、高可用的、 可横向扩展的用于实现分布式系统的服务发现与配置。
+
+### Consul的特点
+
+- 服务发现：提供HTTP/DNS两种发现方式
+- 健康监测：支持多种方式，HTTP、TCP、Docker、shell脚本地址华
+- KV存储：Key、Value的存储方式
+- 多数据中心：Consul支持多数据中心
+- 可视化界面
+
+### 使用
+
+查看版本号：consul --version
+
+运行：consul agent -dev
+
+访问Consul的首页：http://localhost:8500
+
+新建cloud-providerconsul-payment8006工程
+
+~~~xml
+        <!--SpringCloud consul-server-->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-consul-discovery</artifactId>
+        </dependency>
+~~~
+
+~~~yaml
+server:
+  # consul服务端口
+  port: 8006
+spring:
+  application:
+    name: cloud-provider-payment
+  cloud:
+    consul:
+      # consul注册中心地址
+      host: localhost
+      port: 8500
+      discovery:
+        hostname: 127.0.0.1
+        service-name: ${spring.application.name}
+~~~
+
+![8006注册到consul](https://github.com/jackhusky/springcloud/blob/master/images/8006注册到consul.png)
+
+新建cloud-consumerconsul-order80工程，按照cloud-providerconsul-payment8006注册到Consul
+
+测试访问地址http://localhost/consumer/payment/consul正常返回
+
+## 三个注册中心异同点
+
+| 组件      | 语言 | CAP  | 服务健康检查 | 对外暴露接口 | Spring Cloud集成 |
+| --------- | ---- | ---- | ------------ | ------------ | ---------------- |
+| Eureka    | Java | AP   | 可配支持     | HTTP         | 是               |
+| Consul    | GO   | CP   | 支持         | HTTP/DNS     | 是               |
+| Zookeeper | Java | CP   | 支持         | 客户端       | 是               |
+
+分区容错性要保证,所以要么是CP,要么是AP；
+
+- C: Consistency(强一致性)
+- A: Availability(可用性)
+- P: Parttition tolerance(分区容错性)
+
+CAP理论关注粒度是否是数据，而不是整体系统设计的策略
+
+![CAP理论图](https://github.com/jackhusky/springcloud/blob/master/images/CAP理论图.png)
+
+Eureka自我保护，好死不如赖活着
+
+![保证高可用AP](https://github.com/jackhusky/springcloud/blob/master/images/保证高可用AP.png)
+
+Zookeeper临时节点，有就是有，没有就是没有
+
+![保证一致性CP](https://github.com/jackhusky/springcloud/blob/master/images/保证一致性CP.png)
 
