@@ -33,6 +33,11 @@ public class PaymentController {
     @Autowired
     private DiscoveryClient discoveryClient;
 
+    @GetMapping(value = "/payment/lb")
+    public String getPaymentLB() {
+        return serverPort;
+    }
+
     @GetMapping("/payment/discovery")
     public Object discovery() {
         List<String> services = discoveryClient.getServices();

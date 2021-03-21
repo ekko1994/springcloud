@@ -1260,3 +1260,168 @@ Zookeeper临时节点，有就是有，没有就是没有
 
 ## Ribbon负载均衡调用
 
+Spring Cloud Ribbon是基于NetFlix Ribbon实现的一套客户端负载均衡的工具。主要功能是提供客户端的软件负载均衡算法和服务调用。Ribbon客户端组件提供一系列的配置如连接超时，重试等。在配置文件中列出Load Balancer（LB）后面的所有机器，Ribbon会自动帮你基于某种规则（简单轮训、随机连接等）去连接这些机器。我们很容易使用Ribbon实现自定义的负载均衡算法。
+
+Ribbon也进入了维护模式，未来替换方案LoadBanlancer。
+
+### LB（负载均衡）
+
+就是将用户的请求平摊的分配到多个服务上，从而达到系统的HA（高可用）。常见的负载均衡有软件Nginx、LVS，硬件F5等。
+
+Ribbon本地负载均衡客户端 VS Nginx服务端负载均衡区别：
+
+Nginx是服务器负载均衡，客户端所有请求都会交给Nginx，然后Nginx实现转发请求。即负载均衡石油服务端实现的。
+
+Ribbon本地负载均衡，在调用微服务接口时候，会在注册中心上获取注册信息服务列表之后缓存到JVM本地，从而在本地实现RPC远程服务调用技术。
+
+集中式LB（Nginx）：在服务的消费方和提供方之间使用独立的LB设施（可以是硬件F5、也可以是软件Nginx），由该设施负责把访问请求通过某种策略转发至服务的提供方；
+
+进程内LB（Ribbon）：将LB逻辑继承到消费方，消费方从服务注册中心获取有哪些地址可用，然后自己再从这些地址中选择出一个合适的服务器。Ribbon只是一个类库，集成于消费方进程，消费方通过它来获取到服务提供方的地址。
+
+Ribbon：负载均衡 + ResTemplate
+
+### Ribbon负载均衡
+
+![Ribbon架构](https://github.com/jackhusky/springcloud/blob/master/images/Ribbon架构.png)
+
+Ribbon工作两步：
+
+- 选择EurekaServer，优先选择在同一个区域内负载较少的server
+- 根据用户指定的策略，从server取到的服务注册列表中选择一个地址。Ribbon提供了多种策略：比如轮训、随机和根据响应时间加权
+
+`spring-cloud-starter-netflix-eureka-client `中自带了 `spring-cloud-starter-netflix-ribbon`
+
+getForObject/getForEntity 和postForObject/postEntity
+
+~~~java
+    @GetMapping("/consumer/payment/get/{id}")
+    public CommonResult<Payment> getPayment(@PathVariable("id") Long id){
+        return restTemplate.getForObject(PAYMENT_URL+"/payment/get/"+id,CommonResult.class);
+    }
+
+    @GetMapping("/consumer/payment/getForEntity/{id}")
+    public CommonResult<Payment> getPayment2(@PathVariable("id") Long id){
+        ResponseEntity<CommonResult> forEntity = restTemplate.getForEntity(PAYMENT_URL + "/payment/get/" + id, CommonResult.class);
+        if(forEntity.getStatusCode().is2xxSuccessful()){
+            return forEntity.getBody();
+        }else {
+            return new CommonResult<Payment>(444,"操作失败");
+        }
+    }
+~~~
+
+**Ribbon核心组件IRule**：根据特定算法从服务列表中选取一个要访问的服务
+
+查看IRule接口的实现
+
+- RoundRobinRule：轮询
+- RandomRule：随机
+- RetryRule：先按照RoundRobinRule的策略获取服务,如果获取服务失败则在指定时间内进行重试,获取可用的服务
+- WeightedResponseTimeRule：对RoundRobinRule的扩展,响应速度越快的实例选择权重越多大,越容易被选择
+- BestAvailableRule：会先过滤掉由于多次访问故障而处于断路器跳闸状态的服务,然后选择一个并发量最小的服务
+- AvailabilityFilteringRule：先过滤掉故障实例,再选择并发较小的实例
+- ZoneAvoidanceRule：默认规则,复合判断server所在区域的性能和server的可用性选择服务器
+
+自定义规则：修改cloud-consumer-order80工程
+
+> 自定义配置类不能放在@ComponentScan所扫描的当前包以及子包下。https://docs.spring.io/spring-cloud-netflix/docs/2.2.7.RELEASE/reference/html/#customizing-the-ribbon-client
+
+~~~java
+package com.atguigu.myrule;
+
+import com.netflix.loadbalancer.IRule;
+import com.netflix.loadbalancer.RandomRule;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class MySelfRule {
+
+    @Bean
+    public IRule myRuleIRule(){
+        return new RandomRule();
+    }
+}
+~~~
+
+主启动类：
+
+```java
+@SpringBootApplication
+@EnableEurekaClient
+@RibbonClient(value = "CLOUD-PAYMENT-SERVICE",configuration = MySelfRule.class)
+public class OrderMain80 {
+
+    public static void main(String[] args) {
+        SpringApplication.run(OrderMain80.class, args);
+    }
+}
+```
+
+启动cloud-eureka-server7001、cloud-eureka-server7002、cloud-provider-payment8001、cloud-provider-payment8002、cloud-consumer-order80，测试接口 localhost:80/consumer/payment/get/31，可以看到按照我们自定义的规则查找。
+
+**负载均衡算法：rest接口第几次请求数%服务器集群总数量 = 实际调用服务器位置下标，每次服务重启后rest接口计数从1开始。**
+
+cloud-provider-payment8001、cloud-provider-payment8002添加接口
+
+~~~java
+    @GetMapping(value = "/payment/lb")
+    public String getPaymentLB() {
+        return serverPort;
+    }
+~~~
+
+修改cloud-consumer-order80工程，去掉 `@LoadBalanced`注解
+
+自定义规则：
+
+~~~java
+@Component
+public class MyLB implements LoadBalancer {
+
+    private final AtomicInteger atomicInteger = new AtomicInteger(0);
+
+    public final int getAndIncrement() {
+        int current;
+        int next;
+        do {
+            current = this.atomicInteger.get();
+            next = current >= Integer.MAX_VALUE ? 0 : current + 1;
+        } while (!this.atomicInteger.compareAndSet(current, next));
+        System.out.println("*****第几次请求next: " + next);
+        return next;
+    }
+
+    @Override
+    public ServiceInstance instance(List<ServiceInstance> instances) {
+        int index = getAndIncrement() % instances.size();
+        return instances.get(index);
+    }
+}
+~~~
+
+~~~java
+    @Autowired
+    private DiscoveryClient discoveryClient;
+    
+    @Autowired
+    private LoadBalancer loadBalancer;
+
+    @GetMapping(value = "/consumer/payment/lb")
+    public String getPaymentLB() {
+        List<ServiceInstance> instances = discoveryClient.getInstances("CLOUD-PAYMENT-SERVICE");
+        ServiceInstance instance = loadBalancer.instance(instances);
+        URI uri = instance.getUri();
+
+        return restTemplate.getForObject(uri+"/payment/lb",String.class);
+    }
+~~~
+
+测试接口localhost:80/consumer/payment/lb轮训访问服务成功
+
+
+
+
+
+
+

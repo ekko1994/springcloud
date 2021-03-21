@@ -17,4 +17,4 @@ eureka:
       defaultZone: http://eureka7001.com:7001/eureka/
   server:
     # 关闭自我保护机制
-    enable-self-preservation: false
+    enable-self-preservation: true
