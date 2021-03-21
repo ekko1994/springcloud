@@ -1419,6 +1419,300 @@ public class MyLB implements LoadBalancer {
 
 测试接口localhost:80/consumer/payment/lb轮训访问服务成功
 
+## OpenFeign服务接口调用
+
+### 概述
+
+Feign是一个声明式WebService客户端，使用Feign能让编写WebService客户端更加简单。
+
+它的使用方法是定义一个服务接口然后在上面添加注解。Feign也支持可插拔式的编码器和解码器。Spring Cloud对Feign进行了封装，使其支持了SpringMVC标准注解和HttpMessageConverters。Feign可以与Eureka和Ribbon组合使用以支持负载均衡。
+
+Feign旨在使编写Java Http客户端变得更容易。
+
+前面在使用Ribbon+RestTemplate时，利用RestTemplate对Http请求的封装处理，形成了一套模板化的调用方法。但是在实际开发中，由于对服务依赖的调用可能不止一处，往往一个接口会被多处调用，所以通常都会针对每个微服务自行封装一些客户端类来包装这些服务的调用。所以，Feign在此基础上做了进一步封装，由他来帮助我们定义和实现依赖服务接口的定义。在Feign的实现下，我们只需创建一个接口并使用注解的方式来配置它（以前是Dao接口上面标注Mapper注解，现在是一个微服务接口上面标注一个Feign注解即可），即可完成对服务提供方的接口绑定，简化了使用Spring Cloud Ribbon时，自动封装服务调用客户端的开发量。
+
+利用Ribbon维护了Payment的服务列表信息，并且通过轮训实现了客户端的负载均衡。而与Ribbon不同的是，通过Feign只需要定义服务绑定接口且以声明式的方法，优雅而简单的实现了服务调用。
+
+### OpenFeign使用步骤
+
+新建cloud-consumer-feign-order80工程，Feign在消费端使用
+
+pom.xml
+
+~~~xml
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+~~~
+
+application.yml
+
+~~~yaml
+server:
+  port: 80
+
+eureka:
+  client:
+    register-with-eureka: false
+    service-url:
+      defaultZone: http://eureka7001.com:7001/eureka,http://eureka7002.com:7002/eureka
+~~~
+
+主启动类：
+
+~~~java
+@SpringBootApplication
+@EnableFeignClients
+public class OrderFeignMain80 {
+
+    public static void main(String[] args){
+      SpringApplication.run(OrderFeignMain80.class,args);
+    }
+}
+~~~
+
+业务类：
+
+~~~java
+@Component
+@FeignClient("CLOUD-PAYMENT-SERVICE")
+public interface PaymentService {
+
+    @GetMapping("/payment/get/{id}")
+    public CommonResult<Payment> getPaymentById(@PathVariable("id") Long id);
+}
+~~~
+
+控制层：
+
+~~~java
+@RestController
+@Slf4j
+public class OrderFeignController {
+
+    @Resource
+    private PaymentFeignService paymentFeignService;
+
+    @GetMapping("/consumer/payment/get/{id}")
+    public CommonResult<Payment> getPaymentById(@PathVariable("id") Long id){
+        return paymentFeignService.getPaymentById(id);
+    }
+}
+~~~
+
+### OpenFeign超时控制
+
+服务cloud-provider-payment8001添加接口
+
+~~~java
+    @GetMapping("/payment/feign/timeout")
+    public String paymentFeignTimeout(){
+        try { TimeUnit.SECONDS.sleep(3);} catch (InterruptedException e) {e.printStackTrace();}
+        return serverPort;
+    }
+~~~
+
+cloud-consumer-feign-order80添加接口
+
+```java
+@GetMapping("/payment/feign/timeout")
+public String paymentFeignTimeout();
+```
+
+~~~java
+@GetMapping("/consumer/payment/feign/timeout")
+public String timeout(){
+    return paymentFeignService.paymentFeignTimeout();
+}
+~~~
+
+测试接口可以看到错误信息
+
+~~~log
+Whitelabel Error Page
+This application has no explicit mapping for /error, so you are seeing this as a fallback.
+
+Sun Mar 21 21:08:00 CST 2021
+There was an unexpected error (type=Internal Server Error, status=500).
+Read timed out executing GET http://CLOUD-PAYMENT-SERVICE/payment/feign/timeout
+feign.RetryableException: Read timed out executing GET http://CLOUD-PAYMENT-SERVICE/payment/feign/timeout
+	at feign.FeignException.errorExecuting(FeignException.java:213)
+	at feign.SynchronousMethodHandler.executeAndDecode(SynchronousMethodHandler.java:115)
+~~~
+
+OpenFeign默认等待1秒钟,超过后报错；OpenFeign默认支持Ribbon
+
+~~~yaml
+# 设置feign客户端超时时间(OpenFeign默认支持ribbon)
+ribbon:
+  # 指的是建立连接所用的时间,适用于网络状态正常的情况下,两端连接所用的时间
+  ReadTimeout: 5000
+  # 指的是建立连接后从服务器读取到可用资源所用的时间
+  ConnectTimeout: 5000
+~~~
+
+### OpenFeign日志打印功能
+
+Feign提供了日志打印功能，我们可以通过配置来调整日志级别，从而了解Feign中Http请求的细节。说白了就是对Feign接口的调用情况进行监控和输出
+
+- `NONE`，无记录（**DEFAULT**）。
+- `BASIC`，只记录请求方法和URL以及响应状态代码和执行时间。
+- `HEADERS`，记录基本信息以及请求和响应头。
+- `FULL`，记录请求和响应的头文件，正文和元数据。
+
+~~~java
+@Configuration
+public class FeignConfig {
+
+    @Bean
+    public Logger.Level feignLoggerLevel() {
+        return Logger.Level.FULL;
+    }
+}
+~~~
+
+可以看到日志的打印
+
+~~~log
+2021-03-21 21:27:41.982 DEBUG 8596 --- [p-nio-80-exec-5] c.a.s.service.PaymentFeignService        : [PaymentFeignService#getPaymentById] ---> GET http://CLOUD-PAYMENT-SERVICE/payment/get/31 HTTP/1.1
+2021-03-21 21:27:41.983 DEBUG 8596 --- [p-nio-80-exec-5] c.a.s.service.PaymentFeignService        : [PaymentFeignService#getPaymentById] ---> END HTTP (0-byte body)
+2021-03-21 21:27:43.992 DEBUG 8596 --- [p-nio-80-exec-5] c.a.s.service.PaymentFeignService        : [PaymentFeignService#getPaymentById] <--- HTTP/1.1 200 (2008ms)
+2021-03-21 21:27:43.992 DEBUG 8596 --- [p-nio-80-exec-5] c.a.s.service.PaymentFeignService        : [PaymentFeignService#getPaymentById] connection: keep-alive
+2021-03-21 21:27:43.992 DEBUG 8596 --- [p-nio-80-exec-5] c.a.s.service.PaymentFeignService        : [PaymentFeignService#getPaymentById] content-type: application/json
+2021-03-21 21:27:43.992 DEBUG 8596 --- [p-nio-80-exec-5] c.a.s.service.PaymentFeignService        : [PaymentFeignService#getPaymentById] date: Sun, 21 Mar 2021 13:27:43 GMT
+2021-03-21 21:27:43.992 DEBUG 8596 --- [p-nio-80-exec-5] c.a.s.service.PaymentFeignService        : [PaymentFeignService#getPaymentById] keep-alive: timeout=60
+2021-03-21 21:27:43.992 DEBUG 8596 --- [p-nio-80-exec-5] c.a.s.service.PaymentFeignService        : [PaymentFeignService#getPaymentById] transfer-encoding: chunked
+2021-03-21 21:27:43.992 DEBUG 8596 --- [p-nio-80-exec-5] c.a.s.service.PaymentFeignService        : [PaymentFeignService#getPaymentById] 
+2021-03-21 21:27:43.992 DEBUG 8596 --- [p-nio-80-exec-5] c.a.s.service.PaymentFeignService        : [PaymentFeignService#getPaymentById] {"code":200,"message":"查询成功,端口号是:8001","data":{"id":31,"serial":"尚硅谷001"}}
+2021-03-21 21:27:43.992 DEBUG 8596 --- [p-nio-80-exec-5] c.a.s.service.PaymentFeignService        : [PaymentFeignService#getPaymentById] <--- END HTTP (96-byte body)
+~~~
+
+## Hystrix断路器
+
+### 概述
+
+分布式系统面临的问题：复杂分布式体系结构中的应用程序，有数10个依赖关系，每个依赖关系在某些时候将不可避免地失败。
+
+![服务雪崩](https://github.com/jackhusky/springcloud/blob/master/images/服务雪崩.png)
+
+多个微服务之间调用的时候，假设微服务A调用微服务B和微服务C，微服务B和微服务C又调用其它的微服务，这就是所谓的“扇出”。如果扇出的链路上某个微服务的调用响应时间过长或者不可用，对微服务A的调用就会占用越来越多的系统资源，进而引起系统崩溃，所谓的“雪崩效应”。
+
+对于高流量的应用来说，单一的后端依赖可能会导致所有服务器上的所有资源都在几秒钟内饱和。比失败更糟糕的是，这些应用程序还可能导致服务之间的延迟增加，备份队列，线程和其它系统资源紧张，导致整个系统发生更多的级联故障，这些都表示需要对故障和延迟进行隔离和管理，以便单个依赖关系的失败，不能取消整个应用程序或系统。
+
+所以，通常你发现一个模块下的某个实例失败后，这时候这个模块依然还会接收流量，然后这个有问题的模块还调用了其他的模块，这样就会发生级联故障，或者叫雪崩。
+
+#### 是什么
+
+Hystrix是一个用于处理分布式系统的延迟和容错的开源库，在分布式系统里，许多依赖不可避免的会调用失败，比如超时、异常等，Hystrix能保证在一个依赖出问题的情况下，不会导致整体服务失败，避免级联故障，以提高分布式系统的弹性。
+
+“断路器”本身是一种开关装置，当某个服务单元发生故障后，通过断路器的故障监控（类似熔断保险丝），向调用方法返回一个符合预期的、可处理的备选响应（FallBack），而不是长时间的等待或者抛出调用方无法处理的异常，这样就保证了服务调用的线程不会被长时、不必要地占用，从而避免了故障在分布式系统中的蔓延，乃至雪崩。
+
+**Hystrix可以服务降级、服务熔断、接近实时的监控**，Hystrix官宣不再更新。（不发布新版本、不再接受合并请求、被动修复bugs）
+
+### Hystrix重要概念
+
+#### 服务降级
+
+服务器忙，请稍后再试，不让客户端等待并立刻返回一个友好提示。fallback
+
+程序运行异常、超时、服务熔断触发服务降级，线程池/信号量也会导致服务降级。
+
+#### 服务熔断
+
+类似保险丝达到最大服务访问后，直接拒绝访问，拉闸先点，然后调用服务降级的方法并返回友好提示。（服务的降级->进而熔断->恢复调用链路）
+
+#### 服务限流
+
+秒杀高并发等操作，严禁一窝蜂的过来拥挤，大家排队，一秒钟N个，有序进行。
+
+### Hystrix案例
+
+#### 构建和高并发测试
+
+构建cloud-provider-hystrix-payment8001工程，Eureka服务端采用单机版，方便测试。
+
+~~~xml
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-hystrix</artifactId>
+        </dependency>
+~~~
+
+```java
+@Service
+public class PaymentService {
+
+    /**
+     * 正常访问
+     */
+    public String paymentInfo_OK(Integer id) {
+        return "线程池:" + Thread.currentThread().getName() + "paymentInfo_OK,id:" + id + "\t" + "o(∩_∩)o 哈哈";
+    }
+
+    /**
+     * 超时访问
+     */
+    public String paymentInfo_TimeOut(Integer id) {
+        int num = 3;
+        // 暂停3秒钟
+        try {
+            TimeUnit.SECONDS.sleep(num);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        return "线程池:" + Thread.currentThread().getName() + "paymentInfo_TimeOut,id:" + id + "\t" + "o(∩_∩)o 哈哈(秒)" + num;
+    }
+}
+```
+
+开启Jmeter,来20000个并发压死8001,20000个请求都去访问paymentInfo_TimeOut服务
+
+![压测20000个请求](https://github.com/jackhusky/springcloud/blob/master/images/压测20000个请求.png)
+
+paymentInfo_OK请求也在打圈圈，tomcat的默认工作线程数被打满了,没有多余的线程来分解压力和处理
+
+Jmeter压测结论：上面还只是服务提供者8001自己测试,假如此时外部的消费者80也来访问,那消费者只能干等,最终导致消费端80不满意,服务端8001直接被拖死
+
+使用Feign构建cloud-consumer-feign-hystrix-order80
+
+高并发测试：2w个线程压8001，消费者80微服务再去访问的OK服务8001地址localhost/consumer/payment/hystrix/ok/32
+
+消费者80要么转圈圈，要么延时报错；
+
+~~~log
+Whitelabel Error Page
+This application has no explicit mapping for /error, so you are seeing this as a fallback.
+
+Sun Mar 21 22:53:30 CST 2021
+There was an unexpected error (type=Internal Server Error, status=500).
+Read timed out executing GET http://CLOUD-PROVIDER-HYSTRIX-PAYMENT/payment/hystrix/ok/32
+feign.RetryableException: Read timed out executing GET http://CLOUD-PROVIDER-HYSTRIX-PAYMENT/payment/hystrix/ok/32
+	at feign.FeignException.errorExecuting(FeignException.java:213)
+~~~
+
+#### 故障和导致现象
+
+8001同一层次的其他接口被困死,因为tomcat线程池里面的工作线程已经被挤占完毕；80此时调用8001,客户端访问响应缓慢,转圈圈
+
+正因为有上述故障或不佳表现，才有我们的降级/容错/限流等技术诞生。
+
+#### 如何解决
+
+- 超时导致服务变慢——超时不再等待
+- 出错（宕机或程序运行出错）——出错要有兜底
+
+解决：
+
+1、对方服务(8001)超时了，调用者(80)不能一直卡死等待，必须有服务降级。
+
+2、对方服务(8001)down机了，调用者(80)不能一直卡死等待，必须有服务降级。
+
+3、对方服务(8001)ok，调用者(80)自己有故障或有自我要求（自己的等待时间小于服务提供者）。
+
+
+
 
 
 

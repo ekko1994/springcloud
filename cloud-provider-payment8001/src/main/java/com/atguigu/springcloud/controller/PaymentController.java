@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.Resource;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author zhanghao
@@ -32,6 +33,12 @@ public class PaymentController {
 
     @Autowired
     private DiscoveryClient discoveryClient;
+
+    @GetMapping("/payment/feign/timeout")
+    public String paymentFeignTimeout(){
+        try { TimeUnit.SECONDS.sleep(3);} catch (InterruptedException e) {e.printStackTrace();}
+        return serverPort;
+    }
 
     @GetMapping(value = "/payment/lb")
     public String getPaymentLB() {
