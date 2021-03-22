@@ -1711,9 +1711,137 @@ feign.RetryableException: Read timed out executing GET http://CLOUD-PROVIDER-HYS
 
 3、对方服务(8001)ok，调用者(80)自己有故障或有自我要求（自己的等待时间小于服务提供者）。
 
+### 服务降级
 
+cloud-provider-hystrix-payment8001从自身找问题，设置自身调用超时时间的峰值，峰值内可以正常运行，超过了峰值需要有兜底的方法处理，做服务降级。
 
+一旦调用服务方法失败并抛出了错误信息后，会自动调用@HystrixCommand标注好的fallbckMethod调用类中的指定方法
 
+~~~java
+    /**
+     * 超时访问
+     */
+    @HystrixCommand(fallbackMethod = "payment_TimeOutHandler", commandProperties = {
+            @HystrixProperty(name = "execution.isolation.thread.timeoutInMilliseconds", value = "3000")
+    })
+    public String paymentInfo_TimeOut(Integer id) {
+        int num = 5;
+        // 暂停3秒钟
+        try {
+            TimeUnit.SECONDS.sleep(num);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        return "线程池:    " + Thread.currentThread().getName() + " ===> paymentInfo_TimeOut, id: " + id + "\t" + "耗时: " + num +
+                "秒";
+    }
+
+    public String payment_TimeOutHandler(Integer id){
+        return "线程池:    " + Thread.currentThread().getName() + " ===> paymentInfo_TimeOut, id: " + id + "\t" + "o" +
+                "(╥﹏╥)o ";
+    }
+~~~
+
+主启动类标注注解 `@EnableCircuitBreaker`开启Hystrix的功能
+
+客户端 cloud-consumer-feign-hystrix-order80 也可以做服务降级
+
+```yaml
+feign:
+  hystrix:
+    enabled: true
+```
+
+主启动类标注`@EnableHystrix` 注解开启服务消费端Hystrix的功能
+
+```java
+@GetMapping("/consumer/payment/hystrix/timeout/{id}")
+@HystrixCommand(fallbackMethod = "paymentTimeOutFallbackMethod", commandProperties = {
+        @HystrixProperty(name = "execution.isolation.thread.timeoutInMilliseconds", value = "1500")
+})
+public String paymentInfo_TimeOut(@PathVariable("id") Integer id) {
+    //int age = 10/0;
+    return paymentHystrixService.paymentInfo_TimeOut(id);
+}
+
+public String paymentTimeOutFallbackMethod(@PathVariable("id") Integer id) {
+    return "我是消费者80, 对方支付系统繁忙请10秒种后再试或者自己运行出错请检查自己,o(╥﹏╥)o";
+}
+```
+
+这样做的问题：
+
+- 每个业务方法对应一个fallback方法，代码膨胀
+- fallback方法和业务方法放在一起耦合高
+
+问题1的解决：设置默认的fallback方法，不必每个方法定义fallback方法。使用注解`@DefaultProperties`定义默认的fallback方法。
+
+~~~java
+@RestController
+@Slf4j
+@DefaultProperties(defaultFallback = "paymentGloabalFallbackMethod")
+public class OrderHyrixController {
+
+    @Autowired
+    private PaymentHystrixService paymentHystrixService;
+
+    @GetMapping("/consumer/payment/hystrix/ok/{id}")
+    public String paymentInfo_OK(@PathVariable("id") Integer id) {
+        String result = paymentHystrixService.paymentInfo_OK(id);
+        return result;
+    }
+
+    @GetMapping("/consumer/payment/hystrix/timeout/{id}")
+//    @HystrixCommand(fallbackMethod = "paymentTimeOutFallbackMethod", commandProperties = {
+//            @HystrixProperty(name = "execution.isolation.thread.timeoutInMilliseconds", value = "1500")
+//    })
+    @HystrixCommand
+    public String paymentInfo_TimeOut(@PathVariable("id") Integer id) {
+        //int age = 10/0;
+        return paymentHystrixService.paymentInfo_TimeOut(id);
+    }
+
+    public String paymentTimeOutFallbackMethod(@PathVariable("id") Integer id) {
+        return "我是消费者80, 对方支付系统繁忙请10秒种后再试或者自己运行出错请检查自己,o(╥﹏╥)o";
+    }
+
+    public String paymentGloabalFallbackMethod() {
+        return "我是消费者80(paymentGloabalFallbackMethod), 对方支付系统繁忙请10秒种后再试或者自己运行出错请检查自己,o(╥﹏╥)o";
+    }
+}
+~~~
+
+问题2的解决：面对服务端的运行超时宕机，为Feign客户端定义的接口添加一个服务降级处理的实现类实现解耦
+
+```yaml
+feign:
+  hystrix:
+    enabled: true
+```
+
+```java
+@Component
+public class PaymentFallbackService implements PaymentHystrixService{
+
+    @Override
+    public String paymentInfo_OK(Integer id) {
+        return "---->PaymentFallbackService paymentInfo_OK: fallback()";
+    }
+
+    @Override
+    public String paymentInfo_TimeOut(Integer id) {
+        return "---->PaymentFallbackService paymentInfo_TimeOut: fallback()";
+    }
+}
+```
+
+```java
+@FeignClient(value = "CLOUD-PROVIDER-HYSTRIX-PAYMENT",fallback = PaymentFallbackService.class)
+public interface PaymentHystrixService {...}
+```
+
+停掉cloud-provider-hystrix-payment8001服务，访问接口localhost/consumer/payment/hystrix/ok/32，可以看到客户端的fallback方法的调用，这样子不会挂起耗死服务器。
 
 
 
