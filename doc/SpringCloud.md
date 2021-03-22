@@ -1711,7 +1711,7 @@ feign.RetryableException: Read timed out executing GET http://CLOUD-PROVIDER-HYS
 
 3、对方服务(8001)ok，调用者(80)自己有故障或有自我要求（自己的等待时间小于服务提供者）。
 
-### 服务降级
+#### 服务降级
 
 cloud-provider-hystrix-payment8001从自身找问题，设置自身调用超时时间的峰值，峰值内可以正常运行，超过了峰值需要有兜底的方法处理，做服务降级。
 
@@ -1843,7 +1843,7 @@ public interface PaymentHystrixService {...}
 
 停掉cloud-provider-hystrix-payment8001服务，访问接口localhost/consumer/payment/hystrix/ok/32，可以看到客户端的fallback方法的调用，这样子不会挂起耗死服务器。
 
-### 服务熔断
+#### 服务熔断
 
 熔断机制是应对雪崩效应的一种微服务链路保护机制。当删除链路的某个微服务出错不可用或者响应时间太长时，会进行服务的降级，进而熔断该节点的微服务的调用，快速返回错误的响应信息。当检测到该节点微服务调用响应正常后，恢复调用链路。
 
@@ -1902,9 +1902,55 @@ public String paymentCircuitBreaker(@PathVariable("id") Integer id){
 1. 再有请求调用的时候，将不会调用主逻辑，而是直接调用降级fallback，通过断路器，实现了自动地发现错误并将降级逻辑切换为主逻辑，减少响应延迟的效果。
 2. 原来的主逻辑如果恢复呢？对于这一问题，Hystrix也为我们实现了自动恢复功能。当断路器打开，对主逻辑进行熔断之后，Hystrix会启动一个休眠时间窗，在这个时间窗内，降级逻辑是临时成为主逻辑，当休眠窗口到期，断路器将进入半开状态，释放一次请求到原来的主逻辑上，如果这次请求正常返回，那么断路器将继续闭合，主逻辑恢复，如果这次请求依然有问题，断路器继续进入打开状态，休眠时间窗重新计时。
 
-### 服务限流
+#### 服务限流
 
 Sentinel
 
+### 服务监控Hystrix Dashboard
 
+Hystrix提供了准实时的调用监控，Hystrix会持续记录所有通过Hystrix发起的请求的执行信息。Spring Cloud整合了Hystrix Dashboard，对监控内容转化了可视化界面
 
+构建工程cloud-consumer-hystrix-dashboard9001
+
+```xml
+<!--hystrix dashboard-->
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-netflix-hystrix-dashboard</artifactId>
+</dependency>
+```
+
+```java
+@SpringBootApplication
+@EnableHystrixDashboard
+public class HystrixDashboardMain9001 {
+    
+    public static void main(String[] args) {
+        SpringApplication.run(HystrixDashboardMain9001.class, args);
+    }
+}
+```
+
+修改cloud-provider-hystrix-payment8001
+
+```java
+/**
+ * 此配置是为了服务监控而配置，与服务容错本身无观，springCloud 升级之后的坑
+ * ServletRegistrationBean因为springboot的默认路径不是/hystrix.stream
+ * 只要在自己的项目中配置上下面的servlet即可
+ * @return
+ */
+@Bean
+public ServletRegistrationBean getServlet(){
+    HystrixMetricsStreamServlet streamServlet = new HystrixMetricsStreamServlet();
+    ServletRegistrationBean<HystrixMetricsStreamServlet> registrationBean = new ServletRegistrationBean<>(streamServlet);
+    registrationBean.setLoadOnStartup(1);
+    registrationBean.addUrlMappings("/hystrix.stream");
+    registrationBean.setName("HystrixMetricsStreamServlet");
+    return registrationBean;
+}
+```
+
+![hystrixdashboard监控](https://github.com/jackhusky/springcloud/blob/master/images/hystrixdashboard监控.png)
+
+![hystrixdashboard图形说明](https://github.com/jackhusky/springcloud/blob/master/images/hystrixdashboard图形说明.png)
