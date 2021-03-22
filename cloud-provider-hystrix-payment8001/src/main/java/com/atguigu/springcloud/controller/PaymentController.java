@@ -24,6 +24,12 @@ public class PaymentController {
     @Value("${server.port}")
     private String servicePort;
 
+    @GetMapping("/payment/circuit/{id}")
+    public String paymentCircuitBreaker(@PathVariable("id") Integer id){
+        String result = paymentService.paymentCircuitBreaker(id);
+        return result;
+    }
+
     /**
      * 正常访问
      */

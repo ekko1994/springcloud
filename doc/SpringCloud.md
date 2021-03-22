@@ -1843,7 +1843,68 @@ public interface PaymentHystrixService {...}
 
 停掉cloud-provider-hystrix-payment8001服务，访问接口localhost/consumer/payment/hystrix/ok/32，可以看到客户端的fallback方法的调用，这样子不会挂起耗死服务器。
 
+### 服务熔断
 
+熔断机制是应对雪崩效应的一种微服务链路保护机制。当删除链路的某个微服务出错不可用或者响应时间太长时，会进行服务的降级，进而熔断该节点的微服务的调用，快速返回错误的响应信息。当检测到该节点微服务调用响应正常后，恢复调用链路。
+
+Spring Cloud框架中，熔断机制通过Hystrix实现。Hystrix会监控微服务见调用的状况，当失败的调用到一定阈值，缺省是5秒内20次调用失败，就会启动熔断机制。熔断机制的注解是`@HystrixCommand`
+
+https://github.com/Netflix/Hystrix/wiki/How-it-Works#circuit-breaker
+
+修改cloud-provider-hystrix-payment8001
+
+```java
+/**
+ * 测试服务熔断 
+ * @see HystrixCommandProperties
+ */
+@HystrixCommand(fallbackMethod = "paymentCircuitBreaker_fallback",commandProperties = {
+        @HystrixProperty(name = "circuitBreaker.enabled",value = "true"), //开启断路器
+        @HystrixProperty(name = "circuitBreaker.requestVolumeThreshold",value = "10"), //请求次数
+        @HystrixProperty(name = "circuitBreaker.sleepWindowInMilliseconds",value = "10000"), //时间范围
+        @HystrixProperty(name = "circuitBreaker.errorThresholdPercentage",value = "60") //失败率
+})
+public String paymentCircuitBreaker(@PathVariable Integer id){
+    if(id < 0){
+        throw new RuntimeException("******id不能是负数******");
+    }
+    String serailNumber = IdUtil.simpleUUID();
+    return Thread.currentThread().getName() + "调用成功,流水号:" + serailNumber;
+}
+
+public String paymentCircuitBreaker_fallback(@PathVariable("id") Integer id){
+    return "id不能是负数,请稍候再试(┬＿┬),id: " + id;
+}
+```
+
+```java
+@GetMapping("/payment/circuit/{id}")
+public String paymentCircuitBreaker(@PathVariable("id") Integer id){
+    String result = paymentService.paymentCircuitBreaker(id);
+    return result;
+}
+```
+
+测试 cloud-provider-hystrix-payment8001 一次正确，一次错误；多次运行后发现即使正确的访问也不能进行了，多次正确后慢慢恢复链路
+
+熔断类型：熔断打开、熔断关闭、熔断半开
+
+断路器开启或者关闭的条件：
+
+- 当满足一定的阈值的时候（默认10秒钟超过20个请求次数）
+- 当失败率达到一定的时候（默认10秒内超过50%的请求次数）
+- 到达以上阈值，断路器将会开启
+- 当开启的时候，所有请求都不会进行转发
+- 一段时间之后（默认5秒），这个时候断路器是半开状态，会让其他一个请求进行转发，如果成功，断路器会会关闭，若失败，继续开启，重复4和5
+
+断路器打开后
+
+1. 再有请求调用的时候，将不会调用主逻辑，而是直接调用降级fallback，通过断路器，实现了自动地发现错误并将降级逻辑切换为主逻辑，减少响应延迟的效果。
+2. 原来的主逻辑如果恢复呢？对于这一问题，Hystrix也为我们实现了自动恢复功能。当断路器打开，对主逻辑进行熔断之后，Hystrix会启动一个休眠时间窗，在这个时间窗内，降级逻辑是临时成为主逻辑，当休眠窗口到期，断路器将进入半开状态，释放一次请求到原来的主逻辑上，如果这次请求正常返回，那么断路器将继续闭合，主逻辑恢复，如果这次请求依然有问题，断路器继续进入打开状态，休眠时间窗重新计时。
+
+### 服务限流
+
+Sentinel
 
 
 

@@ -1,8 +1,11 @@
 package com.atguigu.springcloud.service;
 
+import cn.hutool.core.util.IdUtil;
+import com.netflix.hystrix.HystrixCommandProperties;
 import com.netflix.hystrix.contrib.javanica.annotation.HystrixCommand;
 import com.netflix.hystrix.contrib.javanica.annotation.HystrixProperty;
 import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.PathVariable;
 
 import java.util.concurrent.TimeUnit;
 
@@ -12,6 +15,28 @@ import java.util.concurrent.TimeUnit;
  */
 @Service
 public class PaymentService {
+
+    /**
+     * 测试服务熔断
+     * @see HystrixCommandProperties
+     */
+    @HystrixCommand(fallbackMethod = "paymentCircuitBreaker_fallback",commandProperties = {
+            @HystrixProperty(name = "circuitBreaker.enabled",value = "true"), //开启断路器
+            @HystrixProperty(name = "circuitBreaker.requestVolumeThreshold",value = "10"), //请求次数
+            @HystrixProperty(name = "circuitBreaker.sleepWindowInMilliseconds",value = "10000"), //时间范围
+            @HystrixProperty(name = "circuitBreaker.errorThresholdPercentage",value = "60") //失败率
+    })
+    public String paymentCircuitBreaker(@PathVariable Integer id){
+        if(id < 0){
+            throw new RuntimeException("******id不能是负数******");
+        }
+        String serailNumber = IdUtil.simpleUUID();
+        return Thread.currentThread().getName() + "调用成功,流水号:" + serailNumber;
+    }
+
+    public String paymentCircuitBreaker_fallback(@PathVariable("id") Integer id){
+        return "id不能是负数,请稍候再试(┬＿┬),id: " + id;
+    }
 
     /**
      * 正常访问
