@@ -2196,3 +2196,142 @@ public class MyLogGateWayFilter implements GlobalFilter, Ordered {
 
 访问：localhost:9527/payment/lb?username=ddd 可以通过
 
+## SpringCloud Config分布式配置中心
+
+https://docs.spring.io/spring-cloud-config/docs/2.2.7.RELEASE/reference/html/
+
+分布式系统面临的配置问题？   
+
+微服务意味着要将单体应用中的业务拆分成一个个子服务，每个服务的粒度相对较小，因此系统中会出现大量的服务。由于每个服务都需要必要的配置信息才能运行，所以一套集中式的、动态的配置管理设施是必不可少的。
+
+SpringCloud提供了ConfigServer来解决这个问题，我们每一个微服务自己带着一个application.yml，上百个配置文件的管理....../(ㄒoㄒ)/~~
+
+![SpringCloudConfig配置中心.wmf](https://github.com/jackhusky/springcloud/blob/master/images/SpringCloudConfig配置中心.wmf)
+
+SpringCloud Config为微服务架构中的微服务提供集中化的外部配置支持，配置服务器为各个不同微服务应用的所有环境提供了一个中心化的外部配置。
+
+SpringCloud Config分为服务端和客户端两部分。
+
+服务端也称为分布式配置中心，它是一个独立的微服务应用，用来连接配置服务器并为客户端提供获取配置信息，加密/解密信息等访问接口。
+
+客户端则是通过指定的配置中心来管理应用资源，以及与业务相关的配置内容，并在启动的时候从配置中心获取和加载配置信息配置服务器默认采用git来存储配置信息，这样就有助于对环境配置进行版本管理，并且可以通过git客户端工具来方便的管理和访问配置内容。
+
+- 集中管理配置文件
+- 不同环境不同配置，动态化的配置更新，分环境部署比如dev/test/prod/beta/release
+- 运行期间动态调整配置，不再需要在每个服务部署的机器上编写配置文件，服务会向配置中心统一拉取配置自己的信息
+- 当配置发生变动时，服务不需要重启即可感知到配置的变化并应用新的配置
+- 将配置信息以REST接口的形式暴露。post、curl访问刷新均可...
+
+### 服务端配置与测试
+
+新建microservicecloud-config-3344模块，它是Cloud的配置中心模块，服务端
+
+```xml
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-config-server</artifactId>
+</dependency>
+```
+
+```yaml
+spring:
+  cloud:
+    config:
+      server:
+        git:
+          uri: git@github.com:jackhusky/springcloud-config.git #GitHub上面的git仓库名字
+          search-paths:
+            - springcloud-config # 搜索的目录
+      # 读取分支
+      label: master
+```
+
+```java
+@SpringBootApplication
+@EnableConfigServer
+public class ConfigCenter3344 {
+    
+    public static void main(String[] args) {
+        SpringApplication.run(ConfigCenter3344.class, args);
+    }
+}
+```
+
+/{label}/{application}-{profile}.yml：http://config-3344.com:3344/master/application-test.yml
+
+### 客户端配置与测试
+
+```xml
+<!-- SpringCloud Config客户端 -->
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-config</artifactId>
+</dependency>
+```
+
+applicaiton.yml是用户级的资源配置项，bootstrap.yml是系统级的，优先级更加高
+
+Spring Cloud会创建一个`Bootstrap Context`，作为Spring应用的`Application Context`的父上下文。初始化的时候，`Bootstrap Context`负责从外部源加载配置属性并解析配置。这两个上下文共享一个从外部获取的`Environment`。`Bootstrap`属性有高优先级，默认情况下，它们不会被本地配置覆盖。 `Bootstrap context`和`Application Context`有着不同的约定所以新增了一个`bootstrap.yml`文件，保证`Bootstrap Context`和`Application Context`配置的分离。
+
+bootstrap.yml：
+
+```yaml
+spring:
+  cloud:
+    config:
+      name: application #需要从github上读取的资源名称，注意没有yml后缀名
+      profile: dev   #本次访问的配置项
+      label: master
+      uri: http://config-3344.com:3344  #本微服务启动后先去找3344号服务，通过SpringCloudConfig获取GitHub的服务地址
+  application:
+    name: microservicecloud-config-client
+```
+
+```java
+@RestController
+public class ConfigClientRest {
+
+    @Value("${spring.application.name}")
+    private String applicationName;
+
+    @RequestMapping("/config")
+    public String getConfig()
+    {
+        String str = "applicationName: "+applicationName;
+        System.out.println("******str: "+ str);
+        return "applicationName: "+applicationName;
+    }
+}
+```
+
+成功实现了客户端3355访问SpringCloud Config3344通过GitHub获取配置信息
+
+问题随之而来,分布式配置的动态刷新问题；
+
+linux运维修改Github上的配置文件内容修改，刷新3344发现ConfigServer配置中心立刻响应，刷新3355发现ConfigClient客户端的没有任何响应，3355没有变化除非自己重启或者重新加载
+
+### Config客户端之动态刷新
+
+避免每次更新配置都要重启客户端微服务3355
+
+```yaml
+#暴露监控端点
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+```
+
+```java
+@RestController
+@RefreshScope
+public class ConfigClientRest {..}
+```
+
+再需要运维人员发送POST请求刷新3355，curl  -X POST "http://localhost:3355/actuator/refresh"
+
+localhost:3355/config 成功获取到最新值
+
+假设有多个微服务3355/3366/3377.....每个微服务都要执行一次post请求,手动刷新?可否广播,一次通知,处处生效?我们想大范围的自动刷新
+
