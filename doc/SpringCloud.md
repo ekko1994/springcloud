@@ -1954,3 +1954,245 @@ public ServletRegistrationBean getServlet(){
 ![hystrixdashboard监控](https://github.com/jackhusky/springcloud/blob/master/images/hystrixdashboard监控.png)
 
 ![hystrixdashboard图形说明](https://github.com/jackhusky/springcloud/blob/master/images/hystrixdashboard图形说明.png)
+
+## Gateway新一代网关
+
+https://cloud.spring.io/spring-cloud-static/spring-cloud-gateway/2.2.1.RELEASE/reference/html/
+
+Spring Cloud全家桶中有个很重要的组件就是网关，在1.x版本中都是采用Zuul网关。但是在2.x版本中，Zuul的升级一直跳票，Spring Cloud自己开发了网关替代Zuul，那就是Spring Cloud Gateway。
+
+Spring Cloud Gateway旨在提供一种简单而有效的方式来对API进行路由，以及提供一些强大的过滤器，例如：熔断、限流、重试等。它是基于WebFlux框架实现的，而WebFlux框架底层就是使用了高性能的Reactor模式通信框架Netty。
+
+Spring Cloud Gateway的目标是提供统一的路由方式且基于Filter链的方式提供了网关的功能，例如：安全、监控/指标、限流。
+
+![网关的位置](https://github.com/jackhusky/springcloud/blob/master/images/网关的位置.bmp)
+
+SpringCloud Gateway的特性：
+
+- 基于Spring5，Project Reactor和Spring Boot 2.0进行构建
+
+- 动态路由：能够匹配任何请求属性
+- 可以对路由指定Predicate（断言）和Filter（顾虑器）
+- 集成Hystrix的断路器功能
+- 集成Spring Cloud 服务发现功能
+- 易于编写的Predicate（断言）和Filter（顾虑器）
+- 请求限流功能
+- 支持路径重写
+
+Zuul1.x模型：
+
+Spring Cloud中所集成的Zuul版本，采用的是Tomcat容器，使用的是传统的Servlet IO处理模型。Servlet由Servlet container进行生命周期管理。container启动时构建servlet对象并调用servlet init()进行初始化；container运行时接收请求，为每个请求分配一个线程（一般从线程池中获取空闲线程）然后调用service()；container关闭时调用servlet destory()销毁servlet。
+
+servlet是一个简单的网络IO模型，当请求进入servlet container时，servlet container就会为其绑定一个线程，在并发不高的场景下这种模型是适用的。但是在高并发情况下线程数量就会上涨，而线程资源代价是昂贵的（上下文切换，内存消耗大）严重影响请求的处理时间。在一些简单业务场景下不希望为每个request分配一个线程，只需要1个或几个线程就能应对极大并发的请求，这种业务场景下servlet模型没有优势。
+
+所以Zuul1.x是基于servlet之上的一个阻塞时处理模型，spring实现了处理所有request请求的一个servlet（DispatcherServlet）并由该servlet阻塞式处理。所以Spring Cloud Zuul无法摆脱servlet模型的弊端。
+
+Gateway模型：
+
+传统的Web框架，比如：struts2，springmvc都是基于Servlet API与Servlet容器基础之上运行的。在Serlvet3.1之后有了异步非阻塞的支持。而WebFlux是一个典型非阻塞异步的框架，它的核心是基于Reactor的相关API实现的。相对于传统的web框架来说，它可以运行在诸如Netty、Undertow以及支持Servlet3.1的容器上。非阻塞式+函数式编程（Spring5必须让你使用JAVA8）。
+
+Spring WebFlux 是基于Spring 5.0引入的新的响应式框架，区别于SpringMVC，他不需要依赖Serlvet API，它是完全异步阻塞的，并且基于Reactor来实现响应式流规范。
+
+### 三大核心
+
+- Route（路由）：是构建网关的基本模块，它由ID，目标URI，一系列的断言和过滤器组成，如断言为true则匹配该路由
+- Predicate（断言）：参考Java8的java.util.function.Predicate，开发人员可以匹配HTTP请求中的所有内容(例如请求头或请求参数),如果请求与断言相匹配则进行路由
+- Filter（过滤）：指的是Spring框架中GatewayFilter的实例，使用过滤器，可以在请求被路由前或之后对请求进行修改
+
+![gateway工作流程](https://github.com/jackhusky/springcloud/blob/master/images/gateway工作流程.png)
+
+客户端向Spring Cloud Gateway发出请求，然后在Gateway Handler Mapping中找到与请求相匹配的路由，将其发送到Gateway Web Handler。Handler再通过指定的过滤器来讲请求发送到我们实际的服务之星业务逻辑，然后返回。过滤器之间用虚线分开是应为过滤器可能在发送代理请求之前（pre）或之后（post）之星业务逻辑。
+
+Filter在“pre”类型的过滤器可以做参数校验、权限校验、流量监控、日志输出、协议转换等；在“post”类型的过滤器中可以做响应内容、响应头的修改、日志的输出，流量监控等有着非常重要的作用。
+
+核心逻辑：路由转发+执行过滤器链
+
+### 入门配置
+
+新建工程cloud-gateway-gateway9527
+
+```xml
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-gateway</artifactId>
+</dependency>
+```
+
+```yaml
+server:
+  port: 9527
+spring:
+  application:
+    name: cloud-gateway
+eureka:
+  instance:
+    hostname: cloud-gateway-service
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://eureka7001.com:7001/eureka
+```
+
+```java
+@SpringBootApplication
+@EnableEurekaClient
+public class GatewayMain9527 {
+
+    public static void main(String[] args) {
+        SpringApplication.run(GatewayMain9527.class, args);
+    }
+}
+```
+
+cloud-provider-payment8001 的 controller的lb、get，不想暴露8001端口，希望在8001外面套一层9527
+
+```yaml
+spring:
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true # 开启从注册中心动态创建路由的功能，利用微服务名称进行路由
+      routes:
+        - id: payment_route # 路由的id,没有规定规则但要求唯一,建议配合服务名
+          #匹配后提供服务的路由地址
+          uri: http://localhost:8001
+          predicates:
+            - Path=/payment/get/** # 断言，路径相匹配的进行路由
+        - id: payment_route2
+          uri: http://localhost:8001
+          predicates:
+            Path=/payment/lb/** #断言,路径相匹配的进行路由
+```
+
+访问：localhost:9527/payment/get/31
+
+编码方式：
+
+```java
+@Bean
+public RouteLocator customRouteLocator(RouteLocatorBuilder routeBuilder){
+    RouteLocatorBuilder.Builder routes = routeBuilder.routes();
+    routes.route("path_route_atguigu",
+            r -> r.path("/guonei")
+                    .uri("https://news.baidu.com/guonei"))
+            .route("path_route_atguigu2",
+                    r -> r.path("/guoji")
+                            .uri("https://news.baidu.com/guoji")).build();
+    return routes.build();
+}
+```
+
+### 通过服务名实现动态
+
+默认情况下Gatway会根据注册中心注册的服务列表,  以注册中心上微服务名为路径创建动态路由进行转发,从而实现动态路由的功能。
+
+```yaml
+spring:
+  application:
+    name: cloud-gateway
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true # 开启从注册中心动态创建路由的功能，利用微服务名称进行路由
+      routes:
+        - id: payment_route # 路由的id,没有规定规则但要求唯一,建议配合服务名
+          #匹配后提供服务的路由地址
+          uri: lb://CLOUD-PAYMENT-SERVICE
+          predicates:
+            - Path=/payment/get/** # 断言，路径相匹配的进行路由
+        - id: payment_route2
+          uri: lb://CLOUD-PAYMENT-SERVICE
+          predicates:
+            - Path=/payment/lb/** #断言,路径相匹配的进行路由
+```
+
+lb://serverName是spring cloud  gatway在微服务中自动为我们创建的负载均衡uri。
+
+### Predicate
+
+启动cloud-gateway-gateway9527的日志：
+
+~~~log
+2021-03-22 20:28:42.138  INFO 9416 --- [  restartedMain] o.s.c.g.r.RouteDefinitionRouteLocator    : Loaded RoutePredicateFactory [After]
+2021-03-22 20:28:42.138  INFO 9416 --- [  restartedMain] o.s.c.g.r.RouteDefinitionRouteLocator    : Loaded RoutePredicateFactory [Before]
+2021-03-22 20:28:42.138  INFO 9416 --- [  restartedMain] o.s.c.g.r.RouteDefinitionRouteLocator    : Loaded RoutePredicateFactory [Between]
+2021-03-22 20:28:42.138  INFO 9416 --- [  restartedMain] o.s.c.g.r.RouteDefinitionRouteLocator    : Loaded RoutePredicateFactory [Cookie]
+2021-03-22 20:28:42.138  INFO 9416 --- [  restartedMain] o.s.c.g.r.RouteDefinitionRouteLocator    : Loaded RoutePredicateFactory [Header]
+2021-03-22 20:28:42.138  INFO 9416 --- [  restartedMain] o.s.c.g.r.RouteDefinitionRouteLocator    : Loaded RoutePredicateFactory [Host]
+2021-03-22 20:28:42.138  INFO 9416 --- [  restartedMain] o.s.c.g.r.RouteDefinitionRouteLocator    : Loaded RoutePredicateFactory [Method]
+2021-03-22 20:28:42.138  INFO 9416 --- [  restartedMain] o.s.c.g.r.RouteDefinitionRouteLocator    : Loaded RoutePredicateFactory [Path]
+2021-03-22 20:28:42.138  INFO 9416 --- [  restartedMain] o.s.c.g.r.RouteDefinitionRouteLocator    : Loaded RoutePredicateFactory [Query]
+2021-03-22 20:28:42.139  INFO 9416 --- [  restartedMain] o.s.c.g.r.RouteDefinitionRouteLocator    : Loaded RoutePredicateFactory [ReadBodyPredicateFactory]
+2021-03-22 20:28:42.139  INFO 9416 --- [  restartedMain] o.s.c.g.r.RouteDefinitionRouteLocator    : Loaded RoutePredicateFactory [RemoteAddr]
+2021-03-22 20:28:42.139  INFO 9416 --- [  restartedMain] o.s.c.g.r.RouteDefinitionRouteLocator    : Loaded RoutePredicateFactory [Weight]
+2021-03-22 20:28:42.139  INFO 9416 --- [  restartedMain] o.s.c.g.r.RouteDefinitionRouteLocator    : Loaded RoutePredicateFactory [CloudFoundryRouteService]
+~~~
+
+[Route Predicate Factories是什么？](https://cloud.spring.io/spring-cloud-static/spring-cloud-gateway/2.2.1.RELEASE/reference/html/#gateway-request-predicates-factories)
+
+```yaml
+spring:
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true # 开启从注册中心动态创建路由的功能，利用微服务名称进行路由
+      routes:
+        - id: payment_route # 路由的id,没有规定规则但要求唯一,建议配合服务名
+          #匹配后提供服务的路由地址
+          uri: lb://CLOUD-PAYMENT-SERVICE
+          predicates:
+            - Path=/payment/get/** # 断言，路径相匹配的进行路由
+        - id: payment_route2
+          uri: lb://CLOUD-PAYMENT-SERVICE
+          predicates:
+            - Path=/payment/lb/** #断言,路径相匹配的进行路由
+#            - After=2021-03-22T20:37:42.431+08:00[Asia/Shanghai] #在这个时间之后才可以访问
+#            - Before=2021-03-25T20:37:42.431+08:00[Asia/Shanghai] #在这个时间之前才可以访问
+#            - Cookie=username, zzhh #携带的Cookie
+#            - Header=X-Request-Id, \d+ #请求带X-Request-Id属性并且值为整数的正则表达式
+        
+```
+
+~~~shell
+curl http://localhost:9527/payment/lb --cookie "username=zzhh"
+curl http://localhost:9527/payment/lb -H "X-Request-Id:23"
+~~~
+
+### Filter
+
+路由过滤器可用于修改进入的HTTP请求和返回HTTP响应，路由过滤器只能指定路由进行使用。Spring Cloud Gateway内置了很多路由过滤器，他们都由GatewayFilter的工厂类来产生。
+
+[GatewayFilter Factories](https://cloud.spring.io/spring-cloud-static/spring-cloud-gateway/2.2.1.RELEASE/reference/html/#gatewayfilter-factories)、[Global Filters](https://cloud.spring.io/spring-cloud-static/spring-cloud-gateway/2.2.1.RELEASE/reference/html/#global-filters)
+
+自定义Filter：
+
+```java
+@Component
+@Slf4j
+public class MyLogGateWayFilter implements GlobalFilter, Ordered {
+    
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        log.info("****************come in MyLogGateWayFilter:   " + new Date());
+        String username = exchange.getRequest().getQueryParams().getFirst("username");
+        if (username == null){
+            log.info("*********用户名为null, 非法用户, o(╥﹏╥)o");
+            exchange.getResponse().setStatusCode(HttpStatus.NOT_ACCEPTABLE);
+            return exchange.getResponse().setComplete();
+        }
+        return chain.filter(exchange);
+    }
+
+    @Override
+    public int getOrder() {
+        return 0;
+    }
+}
+```
+
+访问：localhost:9527/payment/lb?username=ddd 可以通过
+
