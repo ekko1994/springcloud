@@ -2440,3 +2440,185 @@ spring:
 curl -X POST "http://localhost:3344/actuator/bus-refresh/config-client:3355"
 ~~~
 
+## SpringCloud Stream消息驱动
+
+屏蔽底层信息中间件的差异,降低切换成本，统一消息的编程模型
+
+应用程序通过inuputs或者outputs来与Spring Cloud Stream中binder对象交互。通过配置binding，而Spring Cloud Stream的binder对象负责与消息中间件交互。所以，只要清楚如何与Spring Cloud Stream交互就可以使用消息驱动的方式。
+
+为什么引入Spring Cloud Stream？
+
+比如RabbitMQ和Kafka，两个消息中间件架构上的不同。如果用了其中的一种，后面要像做另一种消息中间件的迁移，需要重新做，因为他跟系统耦合了。这时候Spring Cloud Stream提供了一种解耦合的方式。
+
+为了什么Spring Cloud Stream可以统一底层差异？
+
+通过定义绑定器Binder作为中间层，实现了应用程序与消息中间件细节之间的隔离。通过向应用程序暴露统一的Channel通道，应用程序不需要再考虑各种不同的消息中间件实现。
+
+Spring Cloud Stream对消息中间件的进一步封装，可以做到代码层面对中间件的无感知，甚至于动态切换中间件（rabbitmq切换为kafka），使得微服务开发的高度解耦，服务可以关注更多自己的业务流程。
+
+![SpringCloudStream架构](https://github.com/jackhusky/springcloud/blob/master/images/SpringCloudStream架构.bmp)
+
+Spring Cloud Stream中的消息通信方式遵循了发布-订阅模式，在rabbitmq中就是Exchange，在kafka中就是topic。
+
+![SpringCloudStream流程图](https://github.com/jackhusky/springcloud/blob/master/images/SpringCloudStream流程图.bmp)
+
+Binder：很方便的链接中间件，屏蔽差异
+
+Channel：通道，是队列Queue的一种抽象，在消息通讯系统中就是实现存储和转发的媒介，通过Channel对队列进行配置
+
+Source和Sink：简单的可理解为参考对象是Spring Cloud Stream的自身，从Stream发布信息就是输出，接受消息就是输入
+
+![SpringCloudStream常用注解](https://github.com/jackhusky/springcloud/blob/master/images/SpringCloudStream常用注解.bmp)
+
+### 消息驱动之生产者
+
+cloud-stream-rabbitmq-provider8801
+
+```xml
+<!--stream rabbit -->
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-stream-rabbit</artifactId>
+</dependency>
+```
+
+```yaml
+server:
+  port: 8801
+
+spring:
+  application:
+    name: cloud-stream-provider
+  cloud:
+    stream:
+      binders:
+        defaultRabbit: # 在此处配置绑定的rabbitmq的服务信息；
+          type: rabbit # 消息组件类型
+          environment: # 设置rabbitmq的相关的环境配置
+            spring:
+              rabbitmq:
+                host: localhost
+                port: 5672
+                username: guest
+                password: guest
+      bindings: # 服务的整合处理
+        output: # 这个名字是一个通道的名称
+          destination: studyExchange # 表示要是用的Exchange的名称定义
+          content-type: application/json # 设置消息类型，本次为json，文本则设置为text/plain
+          binder: defaultRabbit # 设置要绑定的消息服务的具体设置
+eureka:
+  client:
+    service-url:
+      defaultZone: http://eureka7001.com:7001/eureka
+  instance:
+    lease-renewal-interval-in-seconds: 2 #设置心跳的时间间隔（默认30秒）
+    lease-expiration-duration-in-seconds: 5 # 如果现在超过了5秒的间隔（默认90秒）
+    instance-id: send-8801.com # 在信息列表时显示主机名称
+    prefer-ip-address: true #访问的路径变为IP地址
+```
+
+```java
+@EnableBinding(Source.class) // 定义消息的推送管道
+public class MessageProviderImpl implements IMessageProvider {
+
+    @Resource
+    private MessageChannel output;
+
+    @Override
+    public String send() {
+        String serial = UUID.randomUUID().toString();
+        output.send(MessageBuilder.withPayload(serial).build());
+        System.out.println("*********serial: " + serial);
+        return null;
+    }
+}
+```
+
+测试接口http://localhost:8801/sendMessage可以看到rabbitmq中有消息
+
+### 消息驱动之消费者
+
+cloud-stream-rabbitmq-consumer8802
+
+```xml
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-stream-rabbit</artifactId>
+</dependency>
+```
+
+```yaml
+spring:
+  application:
+    name: cloud-stream-consumer
+  cloud:
+    stream:
+      binders:
+        defaultRabbit: # 在此处配置绑定的rabbitmq的服务信息；
+          type: rabbit # 消息组件类型
+          environment: # 设置rabbitmq的相关的环境配置
+            spring:
+              rabbitmq:
+                host: localhost
+                port: 5672
+                username: guest
+                password: guest
+      bindings: # 服务的整合处理
+        input: # 这个名字是一个通道的名称
+          destination: studyExchange # 表示要是用的Exchange的名称定义
+          content-type: application/json # 设置消息类型，本次为json，文本则设置为text/plain
+          binder: defaultRabbit # 设置要绑定的消息服务的具体设置
+```
+
+```java
+@Component
+@EnableBinding(Sink.class)
+public class ReceiveMessageListenerController {
+
+    @Value("${server.port}")
+    private String serverPort;
+
+    @StreamListener(Sink.INPUT)
+    public void input(Message<String> message){
+        System.out.println("消费者1号,------>接收到的消息: "+message.getPayload()+"\t port: " +serverPort);
+    }
+}
+```
+
+### 分组消费与持久化
+
+按照cloud-stream-rabbitmq-consumer8802构建cloud-stream-rabbitmq-consumer8803
+
+运行后有两个问题：重复消费、消息持久化
+
+如何解决？**分组和持久化属性group**
+
+![Stream消息分组](https://github.com/jackhusky/springcloud/blob/master/images/Stream消息分组.bmp)
+
+微服务应用放置于同一个group中,就能保证消息只会被其中一个应用消费一次.  不同的组是可以消费的,同一个组内会发生竞争关系,只有其中一个可以消费，默认是不同组。
+
+```yaml
+spring:
+  application:
+    name: cloud-stream-consumer
+  cloud:
+    stream:
+      binders:
+        defaultRabbit: # 在此处配置绑定的rabbitmq的服务信息；
+          type: rabbit # 消息组件类型
+          environment: # 设置rabbitmq的相关的环境配置
+            spring:
+              rabbitmq:
+                host: localhost
+                port: 5672
+                username: guest
+                password: guest
+      bindings: # 服务的整合处理
+        input: # 这个名字是一个通道的名称
+          destination: studyExchange # 表示要是用的Exchange的名称定义
+          content-type: application/json # 设置消息类型，本次为json，文本则设置为text/plain
+          binder: defaultRabbit # 设置要绑定的消息服务的具体设置
+          group: AAA
+```
+
+设置了分组属性的配置后还有持久化消息的功能，如果消费端服务挂掉了，重启后依然可以消费消息。
