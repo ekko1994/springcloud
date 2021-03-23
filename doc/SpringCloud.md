@@ -2622,3 +2622,45 @@ spring:
 ```
 
 设置了分组属性的配置后还有持久化消息的功能，如果消费端服务挂掉了，重启后依然可以消费消息。
+
+## Spring Cloud Sleuth分布式链路跟踪
+
+在微服务框架中，一个由客户端发起的请求在后端系统中会经过多个不同的服务节点调用来协同产生最后的请求结果，每一个前段请求都会形成一条复杂的分布式服务调用链路，链路中的任何一环出现高延迟或错误都会引起整个请求最后的失败。
+
+Spring Cloud Sleuth提供了一套完整的服务跟踪的解决方案，在分布式系统中提供了追踪解决方案并且兼容支持了zipkin。
+
+~~~shell
+java -jar zipkin-server-2.12.9-exec.jar
+~~~
+
+访问地址：http://localhost:9411/zipkin/
+
+一条链路通过Trace Id唯一标识，Span标识发起的请求信息（调用的链路来源）
+
+![链路图](https://github.com/jackhusky/springcloud/blob/master/images/链路图.png)
+
+### 配置
+
+cloud-provider-payment8001、cloud-consumer-order80
+
+```xml
+<!--包含了sleuth+zipkin-->
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-zipkin</artifactId>
+</dependency>
+```
+
+```yaml
+spring:
+  zipkin:
+    base-url: http://localhost:9411
+  sleuth:
+    sampler:
+      #采样取值介于 0到1之间，1则表示全部收集
+      probability: 1
+```
+
+测试：http://localhost/consumer/payment/zipkin
+
+查看：http://localhost:9411
