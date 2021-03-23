@@ -2206,7 +2206,7 @@ https://docs.spring.io/spring-cloud-config/docs/2.2.7.RELEASE/reference/html/
 
 SpringCloud提供了ConfigServer来解决这个问题，我们每一个微服务自己带着一个application.yml，上百个配置文件的管理....../(ㄒoㄒ)/~~
 
-![SpringCloudConfig配置中心.wmf](https://github.com/jackhusky/springcloud/blob/master/images/SpringCloudConfig配置中心.wmf)
+![SpringCloudConfig配置中心](https://github.com/jackhusky/springcloud/blob/master/images/SpringCloudConfig配置中心.png)
 
 SpringCloud Config为微服务架构中的微服务提供集中化的外部配置支持，配置服务器为各个不同微服务应用的所有环境提供了一个中心化的外部配置。
 
