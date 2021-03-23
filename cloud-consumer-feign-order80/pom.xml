@@ -23,7 +23,7 @@
             <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.atguigu.springcloud</groupId>
+            <groupId>com.atguigu.cloud</groupId>
             <artifactId>cloud-api-common</artifactId>
             <version>${project.version}</version>
         </dependency>

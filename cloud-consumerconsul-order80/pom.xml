@@ -18,7 +18,7 @@
             <artifactId>spring-cloud-starter-consul-discovery</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.atguigu.springcloud</groupId>
+            <groupId>com.atguigu.cloud</groupId>
             <artifactId>cloud-api-common</artifactId>
             <version>${project.version}</version>
         </dependency>
