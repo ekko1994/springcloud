@@ -12,9 +12,20 @@ spring:
       label: master
   application:
     name: cloud-config-center # 注册金eureka的服务名字
+  rabbitmq: #rabbitmq的配置，支持消息总线
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # 暴露bus刷新配置的端点
+        include: 'bus-refresh'
+
 eureka:
   client:
     service-url:
       defaultZone: http://eureka7001.com:7001/eureka
-
-

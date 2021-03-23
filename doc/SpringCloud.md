@@ -2335,3 +2335,108 @@ localhost:3355/config 成功获取到最新值
 
 假设有多个微服务3355/3366/3377.....每个微服务都要执行一次post请求,手动刷新?可否广播,一次通知,处处生效?我们想大范围的自动刷新
 
+## SpringCloud Bus消息总线
+
+Spring Cloud Bus配合Spring Cloud Config使用可以实现配置的动态刷新
+
+![SpringCloudBus配合SpringCloudConfig实现配置动态刷新](https://github.com/jackhusky/springcloud/blob/master/images/SpringCloudBus配合SpringCloudConfig实现配置动态刷新.png)
+
+Spring Cloud Bus是用来将分布式系统的节点与轻量级消息系统链接起来的框架，它整合了Java事件处理机制和消息中间件的功能。Spring Cloud Bus目前支持RabbitMQ和Kafaka
+
+![SpringCloudBus传播分布式系统间的消息](https://github.com/jackhusky/springcloud/blob/master/images/SpringCloudBus传播分布式系统间的消息.png)
+
+Spring Cloud Bus能管理和传播分布式系统间的消息，就像一个分布式执行器，可用于广播状态更改、时间推送等，也可以作为微服务间的通信通道。
+
+什么是总线？
+
+在微服务架构的系统中，通常会使用轻量级的消息代理来构建一个共用的消息主题，并让系统中所有微服务实例都连接上来。由于该主题中产生的消息会被所有实例监听和消费，所以被称为消息总线。在总线上的各个实例，都可以方便地广播一些需要让其他连接在该主题上的实例都知道的消息。
+
+基本原理
+
+ConfigClient实例都监听MQ中同一个topic（默认是SpringCloudBus），当一个服务刷新数据的时候，它会把这个信息放入到topic中，这样其他监听同一个topic的服务就能得到通知，然后去更新自身的配置。
+
+### RabbitMQ环境配置
+
+需要Erlang的环境，安装RabbitMQ，开启可视化
+
+~~~shell
+rabbitmq-plugins enable rabbitmq_management
+~~~
+
+访问地址http://localhost:15672，（guest：guest）
+
+### SpringCloud Bus动态刷新全局广播
+
+演示广播效果，按照microservicecloud-config-client-3355构建一个microservicecloud-config-client-3366
+
+设计思想：
+
+- 利用消息总线触发一个客户端/bus/refresh，刷新所有客户端的配置
+- 利用消息总线触发一个服务端ConfigServer的/bus/refresh端点，刷新所有客户端的配置
+
+![利用消息总线通知ConfigServer端](https://github.com/jackhusky/springcloud/blob/master/images/利用消息总线通知ConfigServer端.png)
+
+第二种更加适合，第一种不适合的原因：
+
+- 打破了微服务的职责单一性，因为微服务本身是业务模块，它本不应该承担配置刷新的职责
+- 打破了微服务各节点的对等性
+- 有一定的局限性。例如，微服务在迁移时，它的网络地址常常会发生变化，此时如果想要做自动刷新，那就会增加更多的修改
+
+给microservicecloud-config-3344配置中心服务器添加消息总线支持
+
+~~~xml
+        <!--消息总线的支持-->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-bus-amqp</artifactId>
+        </dependency>
+~~~
+
+```yaml
+spring:  
+  rabbitmq: #rabbitmq的配置，支持消息总线
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # 暴露bus刷新配置的端点
+        include: 'bus-refresh'
+```
+
+给microservicecloud-config-client-3355、microservicecloud-config-client-3366客户端添加消息总线的支持
+
+```xml
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-bus-amqp</artifactId>
+</dependency>
+```
+
+```yaml
+spring:  
+  rabbitmq: #rabbitmq的配置，支持消息总线
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+```
+
+测试：修改github的配置，发送POST请求：curl -X POST "http://localhost:3344/actuator/bus-refresh"
+
+再次访问http://localhost:3355/config、http://localhost:3366/config都会配置刷新
+
+### SpringCloud Bus动态刷新定点通知
+
+公式: http://localhost:配置中心端口号/actuator/bus-refresh/{destination}
+
+/bus/refresh请求不再发送到具体的服务实例上,而是发给config server并通过destination参数类指定需要重新配置的服务或实例
+
+~~~shell
+curl -X POST "http://localhost:3344/actuator/bus-refresh/config-client:3355"
+~~~
+
