@@ -485,3 +485,290 @@ public class CustomerBlockHandler {
 }
 ```
 
+### 服务熔断功能
+
+Sentinel整合ribbon+openFeign+fallback
+
+cloudalibaba-provider-payment9003、cloudalibaba-provider-payment9003
+
+#### Ribbon系列
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>com.alibaba.cloud</groupId>
+        <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>com.atguigu.cloud</groupId>
+        <artifactId>cloud-api-common</artifactId>
+        <version>${project.version}</version>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.projectlombok</groupId>
+        <artifactId>lombok</artifactId>
+        <optional>true</optional>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-test</artifactId>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+```yaml
+server:
+  port: 9004
+
+spring:
+  application:
+    name: nacos-payment-provider
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+```
+
+```java
+@RestController
+public class PaymentController {
+
+    @Value("${server.port}")
+    private String serverPort;
+
+    public static HashMap<Long, Payment> hashMap = new HashMap<>();
+
+    static {
+        hashMap.put(1L, new Payment(1L, "sgdgj23jh4jbh234"));
+        hashMap.put(2L, new Payment(2L, "gdfhjskhldkkjlfd"));
+        hashMap.put(3L, new Payment(3L, "3kj5kjsdkldsk3od"));
+    }
+
+    @GetMapping("/paymentSQL/{id}")
+    public CommonResult<Payment> paymentSQL(@PathVariable("id") Long id) {
+        Payment payment = hashMap.get(id);
+        CommonResult commonResult = new CommonResult(200, "from mysql, serverPort = " + serverPort, payment);
+        return commonResult;
+    }
+}
+```
+
+cloudalibaba-consumer-nacos-order84
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>com.alibaba.cloud</groupId>
+        <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+    </dependency>
+    <!--     sentinel-datasource-nacos 后续持久化用   -->
+    <dependency>
+        <groupId>com.alibaba.csp</groupId>
+        <artifactId>sentinel-datasource-nacos</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>com.alibaba.cloud</groupId>
+        <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-starter-openfeign</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>com.atguigu.cloud</groupId>
+        <artifactId>cloud-api-common</artifactId>
+        <version>${project.version}</version>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.projectlombok</groupId>
+        <artifactId>lombok</artifactId>
+        <optional>true</optional>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-test</artifactId>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+```yaml
+server:
+  port: 84
+spring:
+  application:
+    name: nacos-order-consumer
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+    sentinel:
+      transport:
+        dashboard: localhost:8080
+        port: 8719
+
+service-url:
+  nacos-user-service: http://nacos-payment-provider
+
+#激活sentinel对feign的支持
+feign:
+  sentinel:
+    enabled: true
+```
+
+```java
+@RestController
+public class CircleBeakerController {
+
+    @Value("${service-url.nacos-user-service}")
+    private String serverUrl;
+
+    @Autowired
+    private RestTemplate restTemplate;
+
+    @GetMapping("/consumer/fallback/{id}")
+    public CommonResult<Payment> fallback(@PathVariable("id") Long id) {
+        CommonResult<Payment> result = restTemplate.getForObject(serverUrl + "/paymentSQL/" + id, CommonResult.class, id);
+        if (id == 4){
+            throw new IllegalArgumentException("IllegalArgumentException,非法参数异常...");
+        }else if (result.getData() == null){
+            throw new NullPointerException("NullPointerException,该id没有对应记录，空指针异常...");
+        }
+        return result;
+    }
+}
+```
+
+测试
+
+```java
+    @GetMapping("/consumer/fallback/{id}")
+//    @SentinelResource(value = "fallback") //没有配置
+//    @SentinelResource(value = "fallback", fallback = "handlerFallback") //fallback只负责业务异常
+//    @SentinelResource(value = "fallback", blockHandler = "blockHandler") //blockHandler只负责控制台配置违规
+//    @SentinelResource(value = "fallback",fallback = "handlerFallback",blockHandler = "blockHandler")
+    @SentinelResource(value = "fallback",fallback = "handlerFallback",blockHandler = "blockHandler",
+                    exceptionsToIgnore = IllegalArgumentException.class) //忽略异常，遇到此异常配置会全部失效
+    public CommonResult<Payment> fallback(@PathVariable("id") Long id) {
+
+        CommonResult<Payment> result = restTemplate.getForObject(serverUrl + "/paymentSQL/" + id, CommonResult.class, id);
+        if (id == 4) {
+            throw new IllegalArgumentException("IllegalArgumentException,非法参数异常...");
+        } else if (result.getData() == null) {
+            throw new NullPointerException("NullPointerException,该id没有对应记录，空指针异常...");
+        }
+        return result;
+    }
+
+    // fallback方法
+    public CommonResult<Payment> handlerFallback(Long id, Throwable e) {
+        Payment payment = new Payment(id, "null");
+        return new CommonResult<Payment>(444, "handlerFallback方法，异常是：" + e.getMessage(), payment);
+    }
+
+    //blockHandler方法
+    public CommonResult blockHandler(Long id, BlockException blockException) {
+        Payment payment = new Payment(id, "null");
+        return new CommonResult(445, "blockHandler-sentinel限流，无此流水：blockException " + blockException);
+    }
+```
+
+#### Feign系列
+
+修改cloudalibaba-consumer-nacos-order84
+
+```xml
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-openfeign</artifactId>
+</dependency>
+```
+
+```yaml
+feign:
+  sentinel:
+    enabled: true
+```
+
+```java
+@FeignClient(value = "nacos-payment-provider")
+public interface PaymentService {
+
+    @GetMapping("/paymentSQL/{id}")
+    public CommonResult<Payment> paymentSQL(@PathVariable("id") Long id);
+}
+```
+
+```java
+@Component
+public class PaymentFallbackService implements PaymentService {
+
+    @Override
+    public CommonResult<Payment> paymentSQL(Long id) {
+        return new CommonResult<>(444, "服务降级返回，PaymentFallbackService",new Payment(id,"errorSerial"));
+    }
+}
+```
+
+```java
+@GetMapping("/comsumer/paymentSQL/{id}")
+public CommonResult<Payment> paymentSQL(@PathVariable("id") Long id){
+    return paymentService.paymentSQL(id);
+}
+```
+
+### 规则持久化
+
+一旦我们重启应用,sentinel规则消失,生产环境需要将配置规则进行持久化
+
+将限流规则持久进Nacos保存,只要刷新8401某个rest地址,sentinel控制台的流控规则就能看得到,只要Nacos里面的配置不删除,针对8401上的流控规则持续有效
+
+修改cloudalibaba-sentinel-server8401
+
+```xml
+<!--Spring Cloud Alibaba sentinel-datasource-nacos 后续做持久化用到-->
+<dependency>
+    <groupId>com.alibaba.csp</groupId>
+    <artifactId>sentinel-datasource-nacos</artifactId>
+</dependency>
+```
+
+在nacos中配置：
+
+~~~json
+[
+    {
+        "resource": "/rateLimit/byUrl",
+        "limitApp": "default",
+        "grade": 1,
+        "count": 1,
+        "strategy": 0,
+        "controlBehavior": 0,
+        "clusterMode": false
+    }
+]
+~~~
+
