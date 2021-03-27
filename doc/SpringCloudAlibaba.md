@@ -772,3 +772,493 @@ public CommonResult<Payment> paymentSQL(@PathVariable("id") Long id){
 ]
 ~~~
 
+## Spring Cloud Alibaba Seata处理分布式事务
+
+分布式事务问题：一次业务操作需要垮多个数据源或需要垮多个系统进行远程调用，就会产生分布式事务问题。
+
+Seata是一款开源的分布式事务解决方案，致力于在微服务架构下提供高性能和简单易用的分布式事务服务
+
+分布式事务处理过程-ID+三组件模型：
+
+Transaction ID(XID)：全局唯一的事务id
+
+**TC (Transaction Coordinator) - 事务协调者**：维护全局和分支事务的状态，驱动全局事务提交或回滚。
+
+**TM (Transaction Manager) - 事务管理器**：定义全局事务的范围：开始全局事务、提交或回滚全局事务。
+
+**RM (Resource Manager) - 资源管理器**：管理分支事务处理的资源，与TC交谈以注册分支事务和报告分支事务的状态，并驱动分支事务提交或回滚。
+
+#### 处理过程
+
+1. TM 向 TC申请开启一个全局事务，全局事务创建成功并生成一个全局唯一的 XID；
+2. XID 在微服务调用链路的上下文中传播；
+3. RM 向 TC 注册分支事务，将其纳入 XID 对应全局事务的管辖；
+4. TM 向 TC 发起针对 XID 的全局提交或回滚决议；
+5. TC 调度 XID 下管辖的全部分支事务完成提交或回滚请求。
+
+![seata处理过程](https://github.com/jackhusky/springcloud/blob/master/images/seata处理过程.png)
+
+#### 配置准备
+
+file.conf主要修改:自定义事务组名称+事务日志存储模式为db+数据库连接
+
+mysql中执行db_store.sql，registry.conf修改type
+
+自己建数据库：
+
+seata_order库下新建t_order表、seata_storage库下新建t_storage表、seata_account库下新建t_account表
+
+~~~sql
+DROP TABLE IF EXISTS `t_order`;
+CREATE TABLE `t_order`  (
+  `int` bigint(11) NOT NULL AUTO_INCREMENT,
+  `user_id` bigint(20) DEFAULT NULL COMMENT '用户id',
+  `product_id` bigint(11) DEFAULT NULL COMMENT '产品id',
+  `count` int(11) DEFAULT NULL COMMENT '数量',
+  `money` decimal(11, 0) DEFAULT NULL COMMENT '金额',
+  `status` int(1) DEFAULT NULL COMMENT '订单状态:  0:创建中 1:已完结',
+  PRIMARY KEY (`int`) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8 COLLATE = utf8_general_ci COMMENT = '订单表' ROW_FORMAT = Dynamic;
+
+DROP TABLE IF EXISTS `t_storage`;
+CREATE TABLE `t_storage`  (
+  `int` bigint(11) NOT NULL AUTO_INCREMENT,
+  `product_id` bigint(11) DEFAULT NULL COMMENT '产品id',
+  `total` int(11) DEFAULT NULL COMMENT '总库存',
+  `used` int(11) DEFAULT NULL COMMENT '已用库存',
+  `residue` int(11) DEFAULT NULL COMMENT '剩余库存',
+  PRIMARY KEY (`int`) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8 COLLATE = utf8_general_ci COMMENT = '库存' ROW_FORMAT = Dynamic;
+INSERT INTO `t_storage` VALUES (1, 1, 100, 0, 100);
+
+CREATE TABLE `t_account`  (
+  `id` bigint(11) NOT NULL COMMENT 'id',
+  `user_id` bigint(11) DEFAULT NULL COMMENT '用户id',
+  `total` decimal(10, 0) DEFAULT NULL COMMENT '总额度',
+  `used` decimal(10, 0) DEFAULT NULL COMMENT '已用余额',
+  `residue` decimal(10, 0) DEFAULT NULL COMMENT '剩余可用额度',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8 COLLATE = utf8_general_ci COMMENT = '账户表' ROW_FORMAT = Dynamic;
+ 
+INSERT INTO `t_account` VALUES (1, 1, 1000, 0, 1000);
+
+~~~
+
+订单-库存-账户3个库下都需要建各自独立的回滚日志表，conf/目录下的db_undo_log.sql
+
+~~~sql
+CREATE TABLE `undo_log` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `branch_id` bigint(20) NOT NULL,
+  `xid` varchar(100) NOT NULL,
+  `context` varchar(128) NOT NULL,
+  `rollback_info` longblob NOT NULL,
+  `log_status` int(11) NOT NULL,
+  `log_created` datetime NOT NULL,
+  `log_modified` datetime NOT NULL,
+  `ext` varchar(100) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_undo_log` (`xid`,`branch_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
+~~~
+
+#### 订单/库存/账户业务微服务准备
+
+业务需求：下订单->减库存->扣余额->改(订单)状态
+
+新建seata-order-service2001
+
+```xml
+<dependencies>
+    <!-- nacos -->
+    <dependency>
+        <groupId>com.alibaba.cloud</groupId>
+        <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+    </dependency>
+    <!-- nacos -->
+
+    <!-- seata-->
+    <dependency>
+        <groupId>com.alibaba.cloud</groupId>
+        <artifactId>spring-cloud-starter-alibaba-seata</artifactId>
+        <exclusions>
+            <exclusion>
+                <groupId>io.seata</groupId>
+                <artifactId>seata-all</artifactId>
+            </exclusion>
+        </exclusions>
+    </dependency>
+    <dependency>
+        <groupId>io.seata</groupId>
+        <artifactId>seata-all</artifactId>
+        <version>0.9.0</version>
+    </dependency>
+    <!-- seata-->
+    <!--feign-->
+    <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-starter-openfeign</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.mybatis.spring.boot</groupId>
+        <artifactId>mybatis-spring-boot-starter</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>com.alibaba</groupId>
+        <artifactId>druid-spring-boot-starter</artifactId>
+        <version>1.1.22</version>
+    </dependency>
+
+    <dependency>
+        <groupId>mysql</groupId>
+        <artifactId>mysql-connector-java</artifactId>
+    </dependency>
+    <!--jdbc-->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-jdbc</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.projectlombok</groupId>
+        <artifactId>lombok</artifactId>
+        <optional>true</optional>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-test</artifactId>
+        <scope>test</scope>
+    </dependency>
+    <!--hutool 测试雪花算法-->
+    <dependency>
+        <groupId>cn.hutool</groupId>
+        <artifactId>hutool-captcha</artifactId>
+        <version>5.2.0</version>
+    </dependency>
+</dependencies>
+```
+
+```yaml
+server:
+  port: 2001
+
+spring:
+  application:
+    name: seata-order-service
+  cloud:
+    alibaba:
+      seata:
+        # 自定义事务组名称需要与seata-server中的对应
+        tx-service-group: fsp_tx_group
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+  datasource:
+    # 当前数据源操作类型
+    type: com.alibaba.druid.pool.DruidDataSource
+    # mysql驱动类
+    driver-class-name: org.gjt.mm.mysql.Driver
+    url: jdbc:mysql://localhost:3306/seata_order?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=GMT%2B8
+    username: root
+    password: 123456
+feign:
+  hystrix:
+    enabled: false
+logging:
+  level:
+    io:
+      seata: info
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+```
+
+file.conf：拷贝seata-server/conf目录下
+
+```conf
+transport {
+  # tcp udt unix-domain-socket
+  type = "TCP"
+  #NIO NATIVE
+  server = "NIO"
+  #enable heartbeat
+  heartbeat = true
+  #thread factory for netty
+  thread-factory {
+    boss-thread-prefix = "NettyBoss"
+    worker-thread-prefix = "NettyServerNIOWorker"
+    server-executor-thread-prefix = "NettyServerBizHandler"
+    share-boss-worker = false
+    client-selector-thread-prefix = "NettyClientSelector"
+    client-selector-thread-size = 1
+    client-worker-thread-prefix = "NettyClientWorkerThread"
+    # netty boss thread size,will not be used for UDT
+    boss-thread-size = 1
+    #auto default pin or 8
+    worker-thread-size = 8
+  }
+  shutdown {
+    # when destroy server, wait seconds
+    wait = 3
+  }
+  serialization = "seata"
+  compressor = "none"
+}
+service {
+  #vgroup->rgroup
+  # 事务组名称
+  vgroup_mapping.fsp_tx_group = "default"
+  #only support single node
+  default.grouplist = "127.0.0.1:8091"
+  #degrade current not support
+  enableDegrade = false
+  #disable
+  disable = false
+  #unit ms,s,m,h,d represents milliseconds, seconds, minutes, hours, days, default permanent
+  max.commit.retry.timeout = "-1"
+  max.rollback.retry.timeout = "-1"
+}
+
+client {
+  async.commit.buffer.limit = 10000
+  lock {
+    retry.internal = 10
+    retry.times = 30
+  }
+  report.retry.count = 5
+  tm.commit.retry.count = 1
+  tm.rollback.retry.count = 1
+}
+
+## transaction log store
+store {
+  ## store mode: file、db
+  #mode = "file"
+  mode = "db"
+
+  ## file store
+  file {
+    dir = "sessionStore"
+
+    # branch session size , if exceeded first try compress lockkey, still exceeded throws exceptions
+    max-branch-session-size = 16384
+    # globe session size , if exceeded throws exceptions
+    max-global-session-size = 512
+    # file buffer size , if exceeded allocate new buffer
+    file-write-buffer-cache-size = 16384
+    # when recover batch read size
+    session.reload.read_size = 100
+    # async, sync
+    flush-disk-mode = async
+  }
+
+  ## database store
+  db {
+    ## the implement of javax.sql.DataSource, such as DruidDataSource(druid)/BasicDataSource(dbcp) etc.
+    datasource = "dbcp"
+    ## mysql/oracle/h2/oceanbase etc.
+    db-type = "mysql"
+    driver-class-name = "com.mysql.jdbc.Driver"
+    url = "jdbc:mysql://127.0.0.1:3306/seata"
+    user = "root"
+    password = "123456"
+    min-conn = 1
+    max-conn = 3
+    global.table = "global_table"
+    branch.table = "branch_table"
+    lock-table = "lock_table"
+    query-limit = 100
+  }
+}
+lock {
+  ## the lock store mode: local、remote
+  mode = "remote"
+
+  local {
+    ## store locks in user's database
+  }
+
+  remote {
+    ## store locks in the seata's server
+  }
+}
+recovery {
+  #schedule committing retry period in milliseconds
+  committing-retry-period = 1000
+  #schedule asyn committing retry period in milliseconds
+  asyn-committing-retry-period = 1000
+  #schedule rollbacking retry period in milliseconds
+  rollbacking-retry-period = 1000
+  #schedule timeout retry period in milliseconds
+  timeout-retry-period = 1000
+}
+
+transaction {
+  undo.data.validation = true
+  undo.log.serialization = "jackson"
+  undo.log.save.days = 7
+  #schedule delete expired undo_log in milliseconds
+  undo.log.delete.period = 86400000
+  undo.log.table = "undo_log"
+}
+
+## metrics settings
+metrics {
+  enabled = false
+  registry-type = "compact"
+  # multi exporters use comma divided
+  exporter-list = "prometheus"
+  exporter-prometheus-port = 9898
+}
+
+support {
+  ## spring
+  spring {
+    # auto proxy the DataSource bean
+    datasource.autoproxy = false
+  }
+}
+```
+
+registry.conf：拷贝seata-server/conf目录下
+
+```conf
+registry {
+  # file 、nacos 、eureka、redis、zk、consul、etcd3、sofa
+  type = "nacos"
+
+  nacos {
+    #serverAddr = "localhost"
+    serverAddr = "localhost:8848"
+    namespace = ""
+    cluster = "default"
+  }
+  eureka {
+    serviceUrl = "http://localhost:8761/eureka"
+    application = "default"
+    weight = "1"
+  }
+  redis {
+    serverAddr = "localhost:6379"
+    db = "0"
+  }
+  zk {
+    cluster = "default"
+    serverAddr = "127.0.0.1:2181"
+    session.timeout = 6000
+    connect.timeout = 2000
+  }
+  consul {
+    cluster = "default"
+    serverAddr = "127.0.0.1:8500"
+  }
+  etcd3 {
+    cluster = "default"
+    serverAddr = "http://localhost:2379"
+  }
+  sofa {
+    serverAddr = "127.0.0.1:9603"
+    application = "default"
+    region = "DEFAULT_ZONE"
+    datacenter = "DefaultDataCenter"
+    cluster = "default"
+    group = "SEATA_GROUP"
+    addressWaitTime = "3000"
+  }
+  file {
+    name = "file.conf"
+  }
+}
+
+config {
+  # file、nacos 、apollo、zk、consul、etcd3
+  type = "file"
+
+  nacos {
+    serverAddr = "localhost"
+    namespace = ""
+  }
+  consul {
+    serverAddr = "127.0.0.1:8500"
+  }
+  apollo {
+    app.id = "seata-server"
+    apollo.meta = "http://192.168.1.204:8801"
+  }
+  zk {
+    serverAddr = "127.0.0.1:2181"
+    session.timeout = 6000
+    connect.timeout = 2000
+  }
+  etcd3 {
+    serverAddr = "http://localhost:2379"
+  }
+  file {
+    name = "file.conf"
+  }
+}
+```
+
+```java
+    @Override
+    @GlobalTransactional(name = "test",rollbackFor = Exception.class)
+    public void create(Order order) {
+        log.info("---->开始新建订单");
+        orderDao.create(order);
+
+        log.info("---->订单微服务开始调用库存，做扣减Count");
+        storageService.decrease(order.getProductId(),order.getCount());
+        log.info("---->订单微服务开始调用库存，做扣减end");
+
+        log.info("---->订单微服务开始调用账户，做扣减Money");
+        accountService.decrease(order.getUserId(),order.getMoney());
+        log.info("---->订单微服务开始调用账户，做扣减end");
+
+        // 修改订单状态，从0到1，1代表已经完成
+        log.info("---->修改订单状态开始");
+        orderDao.update(order.getUserId(),0);
+        log.info("---->修改订单状态结束");
+
+        log.info("---->下订单结束了，o(*￣︶￣*)o");
+    }
+```
+
+```
+@SpringBootApplication(exclude = DataSourceAutoConfiguration.class)
+@EnableFeignClients
+@EnableDiscoveryClient
+public class SeataOrderMainApp2001 {
+
+    public static void main(String[] args) {
+        SpringApplication.run(SeataOrderMainApp2001.class, args);
+    }
+}
+```
+
+新建seata-storage-service2002、seata-account-service2003
+
+#### 测试
+
+http://localhost:2001/order/create?userId=1&productId=1&count=10&money=100
+
+AccountServiceImpl添加超时，超时异常,没加 `@GlobalTransactional`，当库存和账户金额扣减后,订单状态并没有设置为已经完成,没有从零改为1，而且由于feign的重试机制,账户余额还有可能被多次扣减`@GlobalTransactional(name = "test",rollbackFor = Exception.class)`
+
+分布式事务的执行流程：
+
+- TM开启分布式事务(TM向TC注册全局事务记录)
+- 按业务场景,编排数据库、服务等事务内资源(RM向TC汇报资源准备状态)
+- TM结束分布式事务,事务一阶段结束(TM通知TC提交/回滚分布式事务)
+- TC汇报事务信息,决定分布式事务是提交还是回滚
+- TC通知所有RM提交/回滚资源,事务二阶段结束
+
+AT模式如何做到对业务的无侵入？
+
+![seata的AT模式原理](https://github.com/jackhusky/springcloud/blob/master/images/seata的AT模式原理.png)
+
