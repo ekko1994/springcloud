@@ -63,7 +63,7 @@ service-url:
   nacos-user-service: http://nacos-payment-provider
 ```
 
-![注册服务到nacos面板](https://github.com/jackhusky/springcloud/blob/master/images/注册服务到nacos面板.png)
+![注册服务到nacos面板](../images/注册服务到nacos面板.png)
 
 **Nacos支持AP和CP**
 
@@ -136,7 +136,7 @@ nacos-config-client-dev.yaml
 - spring.profile.active 即为当前环境对应的 profile
 - file-exetension 为配置内容的数据格式，可以通过配置项 spring.cloud.nacos.config.file-extension 来配置
 
-![nacos作为配置中心](https://github.com/jackhusky/springcloud/blob/master/images/nacos作为配置中心.png)
+![nacos作为配置中心](../images/nacos作为配置中心.png)
 
 修改Nacos下的yaml配置，再次调用接口发现配置已经刷新
 
@@ -146,7 +146,7 @@ NameSpace+Group+DataID的关系？
 
 NameSpace可以区分部署环境的，Group和DataID逻辑上区分两个目标对象。
 
-![nacos命名空间组DataId关系](https://github.com/jackhusky/springcloud/blob/master/images/nacos命名空间组DataId关系.png)
+![nacos命名空间组DataId关系](../images/nacos命名空间组DataId关系.png)
 
 比如三个环境：开发、测试、生产环境，可以创建三个NameSpace，它们之间是隔离的。
 
@@ -162,7 +162,7 @@ Instance就是微服务的实例。
 
 默认空间+默认分组+新建dev和test两个DataId
 
-![nacos配置1](https://github.com/jackhusky/springcloud/blob/master/images/nacos配置1.png)
+![nacos配置1](../images/nacos配置1.png)
 
 ```yaml
 spring:
@@ -175,7 +175,7 @@ spring:
 
 ##### Group方案
 
-![nacos配置2](https://github.com/jackhusky/springcloud/blob/master/images/nacos配置2.png)
+![nacos配置2](../images/nacos配置2.png)
 
 ```yaml
 spring:
@@ -206,7 +206,7 @@ spring:
 
 新建dev/test/的Namespace
 
-![nacos配置3](https://github.com/jackhusky/springcloud/blob/master/images/nacos配置3.png)
+![nacos配置3](../images/nacos配置3.png)
 
 ```yaml
 spring:
@@ -298,7 +298,7 @@ management:
         include: '*'
 ```
 
-![sentinel控制台](https://github.com/jackhusky/springcloud/blob/master/images/sentinel控制台.png)
+![sentinel控制台](../images/sentinel控制台.png)
 
 sentinel采用的是懒加载，访问接口才能在控制台中看到信息
 
@@ -315,7 +315,7 @@ https://github.com/alibaba/Sentinel/wiki/%E6%B5%81%E9%87%8F%E6%8E%A7%E5%88%B6
 - QPS（每秒钟的请求数量）：当调用该api的QPS达到阈值的时候，进行限流
 - 线程数：当调用该api的线程数达到阈值的时候，进行限流
 
-![流控规则直接模式](https://github.com/jackhusky/springcloud/blob/master/images/流控规则直接模式.png)
+![流控规则直接模式](../images/流控规则直接模式.png)
 
 抛出异常：Blocked by Sentinel(flow limiting)
 
@@ -325,7 +325,7 @@ https://github.com/alibaba/Sentinel/wiki/%E6%B5%81%E9%87%8F%E6%8E%A7%E5%88%B6
 
 当与A关联的资源B达到阈值后,就限流自己
 
-![流控规则关联模式](https://github.com/jackhusky/springcloud/blob/master/images/流控规则关联模式.png)
+![流控规则关联模式](../images/流控规则关联模式.png)
 
 线程密集访问testB，发现访问testA挂掉了
 
@@ -345,7 +345,7 @@ https://github.com/alibaba/Sentinel/wiki/%E6%B5%81%E9%87%8F%E6%8E%A7%E5%88%B6
 
 默认coldFactor为3，即请求QPS从threshold/3开始，经预热时长逐渐升至设定的QPS阈值
 
-![预热效果](https://github.com/jackhusky/springcloud/blob/master/images/预热效果.png)
+![预热效果](../images/预热效果.png)
 
 #### 排队等待
 
@@ -353,7 +353,7 @@ https://github.com/alibaba/Sentinel/wiki/%E6%B5%81%E9%87%8F%E6%8E%A7%E5%88%B6
 
 每秒1次请求，超过的话就排队等待，等待的超时时间为20000毫秒
 
-![排队等待效果](https://github.com/jackhusky/springcloud/blob/master/images/排队等待效果.png)
+![排队等待效果](../images/排队等待效果.png)
 
 ### 降级规则
 
@@ -367,23 +367,23 @@ https://github.com/alibaba/Sentinel/wiki/%E6%B5%81%E9%87%8F%E6%8E%A7%E5%88%B6
 
 平均响应时间
 
-![sentinel测试降级RT](https://github.com/jackhusky/springcloud/blob/master/images/sentinel测试降级RT.png)
+![sentinel测试降级RT](../images/sentinel测试降级RT.png)
 
 #### 异常比例
 
-![sentinel测试降级异常比例](https://github.com/jackhusky/springcloud/blob/master/images/sentinel测试降级异常比例.png)
+![sentinel测试降级异常比例](../images/sentinel测试降级异常比例.png)
 
 #### 异常数
 
 时间窗口一定要大于60秒
 
-![sentinel测试降级异常数](https://github.com/jackhusky/springcloud/blob/master/images/sentinel测试降级异常数.png)
+![sentinel测试降级异常数](../images/sentinel测试降级异常数.png)
 
 ### 热点key限流
 
 之前的例子都是限流出现问题后，都是sentinel系统默认的提示Blocked by Sentinel (flow limiting)，我们也可以自定义降级方法`@Sentinelesource`
 
-![热点规则](https://github.com/jackhusky/springcloud/blob/master/images/热点规则.png)
+![热点规则](../images/热点规则.png)
 
 ```java
     @GetMapping("/testHotKey")
@@ -404,7 +404,7 @@ https://github.com/alibaba/Sentinel/wiki/%E6%B5%81%E9%87%8F%E6%8E%A7%E5%88%B6
 
 我们期望p1参数当它是某个特殊值时，它的限流和平时的规则不一样
 
-![热点规则特殊情况](https://github.com/jackhusky/springcloud/blob/master/images/热点规则特殊情况.png)
+![热点规则特殊情况](../images/热点规则特殊情况.png)
 
 当p1参数是5的情况下，阈值变为100
 
@@ -422,7 +422,7 @@ https://github.com/alibaba/Sentinel/wiki/%E7%B3%BB%E7%BB%9F%E8%87%AA%E9%80%82%E5
 - **并发线程数**：当单台机器上所有入口流量的并发线程数达到阈值即触发系统保护。
 - **入口 QPS**：当单台机器上所有入口流量的 QPS 达到阈值即触发系统保护。
 
-![系统规则](https://github.com/jackhusky/springcloud/blob/master/images/系统规则.png)
+![系统规则](../images/系统规则.png)
 
 ### @SentinelResource
 
@@ -453,7 +453,7 @@ public CommonResult handleException(BlockException exception){
 }
 ```
 
-![按资源名称流控](https://github.com/jackhusky/springcloud/blob/master/images/按资源名称流控.png)
+![按资源名称流控](../images/按资源名称流控.png)
 
 停掉8401服务，Sentinel的控制台中流控规则消失了
 
@@ -468,7 +468,7 @@ public CommonResult byUrl(){
 }
 ```
 
-![按url流控](https://github.com/jackhusky/springcloud/blob/master/images/按url限流.png)
+![按url流控](../images/按url限流.png)
 
 #### 客户自定义限流处理逻辑
 
@@ -796,7 +796,7 @@ Transaction ID(XID)：全局唯一的事务id
 4. TM 向 TC 发起针对 XID 的全局提交或回滚决议；
 5. TC 调度 XID 下管辖的全部分支事务完成提交或回滚请求。
 
-![seata处理过程](https://github.com/jackhusky/springcloud/blob/master/images/seata处理过程.png)
+![seata处理过程](../images/seata处理过程.png)
 
 #### 配置准备
 
@@ -1260,7 +1260,7 @@ AccountServiceImpl添加超时，超时异常,没加 `@GlobalTransactional`，�
 
 AT模式如何做到对业务的无侵入？
 
-![seata的AT模式原理](https://github.com/jackhusky/springcloud/blob/master/images/seata的AT模式原理.png)
+![seata的AT模式原理](../images/seata的AT模式原理.png)
 
 ## 集群高并发情况下如何保证分布式唯一全局id生成
 
@@ -1341,7 +1341,7 @@ Twitter的分布式自增ID算法snowflake，经测试SnowFlake每秒能产生26
 2. SnowFlake算法生成ID的结果是一个64bit大小的整数，为一个Long型（转换成字符串后长度最多19）
 3. 分布式系统内不会产生ID碰撞（由datacenter和workerId作区分）并且效率高
 
-![SnowFlake结构](https://github.com/jackhusky/springcloud/blob/master/images/SnowFlake结构.png)
+![SnowFlake结构](../images/SnowFlake结构.png)
 
 解析：
 

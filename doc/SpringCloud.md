@@ -647,7 +647,7 @@ Eureka采用CS的设计架构，Eureka Server作为服务注册功能的服务�
 
 在服务注册和发现中，有一个注册中心。当服务器启动的时候，会把当前自己服务器的信息，比如服务器地址通讯地址等以别名方式注册到注册中心中。另一方（消费者|服务提供者），以该别名的方式去注册中心上获取到实际的服务通讯地址，然后再实现本地RPC调用远程框架核心设计思想：在于注册中心，因为使用注册中心管理每个服务与服务之间的一个依赖关系（服务治理概念）。在任何RPC远程框架中，都会有一个注册中心（存放服务地址相关信息（接口地址））。
 
-![Eureka系统架构与Dubbo架构](https://github.com/jackhusky/springcloud/blob/master/images/Eureka%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84%E4%B8%8EDubbo%E6%9E%B6%E6%9E%84.png)
+![Eureka系统架构与Dubbo架构](../images/Eureka%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84%E4%B8%8EDubbo%E6%9E%B6%E6%9E%84.png)
 
 ### Eureka两个组件
 
@@ -777,7 +777,7 @@ public class PaymentMain8001 {
 
 启动Eureka服务后访问http://localhost:7001/
 
-![eureka截图1.png](https://github.com/jackhusky/springcloud/blob/master/images/eureka%E6%88%AA%E5%9B%BE1.png)
+![eureka截图1.png](../images/eureka%E6%88%AA%E5%9B%BE1.png)
 
 服务消费者 cloud-consumer-order80 按照 cloud-provider-payment8001 配置即可注册到Eureka服务中。
 
@@ -785,7 +785,7 @@ public class PaymentMain8001 {
 
 原理：
 
-![eureka集群](https://github.com/jackhusky/springcloud/blob/master/images/eureka%E9%9B%86%E7%BE%A4.png)
+![eureka集群](../images/eureka%E9%9B%86%E7%BE%A4.png)
 
 **问题：微服务RPC远程服务调用最核心的是什么？**
 
@@ -1167,11 +1167,11 @@ public class PaymentController {
 
 调用接口localhost:8004/payment/zk正常返回，且服务注册到zookeeper
 
-![服务注册到zookeeper](https://github.com/jackhusky/springcloud/blob/master/images/服务注册到zookeeper.png)
+![服务注册到zookeeper](../images/服务注册到zookeeper.png)
 
 节点是临时节点
 
-![zookeeper临时节点](https://github.com/jackhusky/springcloud/blob/master/images/zookeeper临时节点.png)
+![zookeeper临时节点](../images/zookeeper临时节点.png)
 
 新建cloud-consumerzk-order80工程，按照cloud-provider-payment8004的配置注册到zookeeper中
 
@@ -1226,7 +1226,7 @@ spring:
         service-name: ${spring.application.name}
 ~~~
 
-![8006注册到consul](https://github.com/jackhusky/springcloud/blob/master/images/8006注册到consul.png)
+![8006注册到consul](../images/8006注册到consul.png)
 
 新建cloud-consumerconsul-order80工程，按照cloud-providerconsul-payment8006注册到Consul
 
@@ -1248,15 +1248,15 @@ spring:
 
 CAP理论关注粒度是否是数据，而不是整体系统设计的策略
 
-![CAP理论图](https://github.com/jackhusky/springcloud/blob/master/images/CAP理论图.png)
+![CAP理论图](../images/CAP理论图.png)
 
 Eureka自我保护，好死不如赖活着
 
-![保证高可用AP](https://github.com/jackhusky/springcloud/blob/master/images/保证高可用AP.png)
+![保证高可用AP](../images/保证高可用AP.png)
 
 Zookeeper临时节点，有就是有，没有就是没有
 
-![保证一致性CP](https://github.com/jackhusky/springcloud/blob/master/images/保证一致性CP.png)
+![保证一致性CP](../images/保证一致性CP.png)
 
 ## Ribbon负载均衡调用
 
@@ -1282,7 +1282,7 @@ Ribbon：负载均衡 + ResTemplate
 
 ### Ribbon负载均衡
 
-![Ribbon架构](https://github.com/jackhusky/springcloud/blob/master/images/Ribbon架构.png)
+![Ribbon架构](../images/Ribbon架构.png)
 
 Ribbon工作两步：
 
@@ -1594,7 +1594,7 @@ public class FeignConfig {
 
 分布式系统面临的问题：复杂分布式体系结构中的应用程序，有数10个依赖关系，每个依赖关系在某些时候将不可避免地失败。
 
-![服务雪崩](https://github.com/jackhusky/springcloud/blob/master/images/服务雪崩.png)
+![服务雪崩](../images/服务雪崩.png)
 
 多个微服务之间调用的时候，假设微服务A调用微服务B和微服务C，微服务B和微服务C又调用其它的微服务，这就是所谓的“扇出”。如果扇出的链路上某个微服务的调用响应时间过长或者不可用，对微服务A的调用就会占用越来越多的系统资源，进而引起系统崩溃，所谓的“雪崩效应”。
 
@@ -1669,7 +1669,7 @@ public class PaymentService {
 
 开启Jmeter,来20000个并发压死8001,20000个请求都去访问paymentInfo_TimeOut服务
 
-![压测20000个请求](https://github.com/jackhusky/springcloud/blob/master/images/压测20000个请求.png)
+![压测20000个请求](../images/压测20000个请求.png)
 
 paymentInfo_OK请求也在打圈圈，tomcat的默认工作线程数被打满了,没有多余的线程来分解压力和处理
 
@@ -1951,9 +1951,9 @@ public ServletRegistrationBean getServlet(){
 }
 ```
 
-![hystrixdashboard监控](https://github.com/jackhusky/springcloud/blob/master/images/hystrixdashboard监控.png)
+![hystrixdashboard监控](../images/hystrixdashboard监控.png)
 
-![hystrixdashboard图形说明](https://github.com/jackhusky/springcloud/blob/master/images/hystrixdashboard图形说明.png)
+![hystrixdashboard图形说明](../images/hystrixdashboard图形说明.png)
 
 ## Gateway新一代网关
 
@@ -1965,7 +1965,7 @@ Spring Cloud Gateway旨在提供一种简单而有效的方式来对API进行路
 
 Spring Cloud Gateway的目标是提供统一的路由方式且基于Filter链的方式提供了网关的功能，例如：安全、监控/指标、限流。
 
-![网关的位置](https://github.com/jackhusky/springcloud/blob/master/images/网关的位置.bmp)
+![网关的位置](../images/网关的位置.bmp)
 
 SpringCloud Gateway的特性：
 
@@ -1999,7 +1999,7 @@ Spring WebFlux 是基于Spring 5.0引入的新的响应式框架，区别于Spri
 - Predicate（断言）：参考Java8的java.util.function.Predicate，开发人员可以匹配HTTP请求中的所有内容(例如请求头或请求参数),如果请求与断言相匹配则进行路由
 - Filter（过滤）：指的是Spring框架中GatewayFilter的实例，使用过滤器，可以在请求被路由前或之后对请求进行修改
 
-![gateway工作流程](https://github.com/jackhusky/springcloud/blob/master/images/gateway工作流程.png)
+![gateway工作流程](../images/gateway工作流程.png)
 
 客户端向Spring Cloud Gateway发出请求，然后在Gateway Handler Mapping中找到与请求相匹配的路由，将其发送到Gateway Web Handler。Handler再通过指定的过滤器来讲请求发送到我们实际的服务之星业务逻辑，然后返回。过滤器之间用虚线分开是应为过滤器可能在发送代理请求之前（pre）或之后（post）之星业务逻辑。
 
@@ -2206,7 +2206,7 @@ https://docs.spring.io/spring-cloud-config/docs/2.2.7.RELEASE/reference/html/
 
 SpringCloud提供了ConfigServer来解决这个问题，我们每一个微服务自己带着一个application.yml，上百个配置文件的管理....../(ㄒoㄒ)/~~
 
-![SpringCloudConfig配置中心](https://github.com/jackhusky/springcloud/blob/master/images/SpringCloudConfig配置中心.png)
+![SpringCloudConfig配置中心](../images/SpringCloudConfig配置中心.png)
 
 SpringCloud Config为微服务架构中的微服务提供集中化的外部配置支持，配置服务器为各个不同微服务应用的所有环境提供了一个中心化的外部配置。
 
@@ -2339,11 +2339,11 @@ localhost:3355/config 成功获取到最新值
 
 Spring Cloud Bus配合Spring Cloud Config使用可以实现配置的动态刷新
 
-![SpringCloudBus配合SpringCloudConfig实现配置动态刷新](https://github.com/jackhusky/springcloud/blob/master/images/SpringCloudBus配合SpringCloudConfig实现配置动态刷新.png)
+![SpringCloudBus配合SpringCloudConfig实现配置动态刷新](../images/SpringCloudBus配合SpringCloudConfig实现配置动态刷新.png)
 
 Spring Cloud Bus是用来将分布式系统的节点与轻量级消息系统链接起来的框架，它整合了Java事件处理机制和消息中间件的功能。Spring Cloud Bus目前支持RabbitMQ和Kafaka
 
-![SpringCloudBus传播分布式系统间的消息](https://github.com/jackhusky/springcloud/blob/master/images/SpringCloudBus传播分布式系统间的消息.png)
+![SpringCloudBus传播分布式系统间的消息](../images/SpringCloudBus传播分布式系统间的消息.png)
 
 Spring Cloud Bus能管理和传播分布式系统间的消息，就像一个分布式执行器，可用于广播状态更改、时间推送等，也可以作为微服务间的通信通道。
 
@@ -2374,7 +2374,7 @@ rabbitmq-plugins enable rabbitmq_management
 - 利用消息总线触发一个客户端/bus/refresh，刷新所有客户端的配置
 - 利用消息总线触发一个服务端ConfigServer的/bus/refresh端点，刷新所有客户端的配置
 
-![利用消息总线通知ConfigServer端](https://github.com/jackhusky/springcloud/blob/master/images/利用消息总线通知ConfigServer端.png)
+![利用消息总线通知ConfigServer端](../images/利用消息总线通知ConfigServer端.png)
 
 第二种更加适合，第一种不适合的原因：
 
@@ -2456,11 +2456,11 @@ curl -X POST "http://localhost:3344/actuator/bus-refresh/config-client:3355"
 
 Spring Cloud Stream对消息中间件的进一步封装，可以做到代码层面对中间件的无感知，甚至于动态切换中间件（rabbitmq切换为kafka），使得微服务开发的高度解耦，服务可以关注更多自己的业务流程。
 
-![SpringCloudStream架构](https://github.com/jackhusky/springcloud/blob/master/images/SpringCloudStream架构.bmp)
+![SpringCloudStream架构](../images/SpringCloudStream架构.bmp)
 
 Spring Cloud Stream中的消息通信方式遵循了发布-订阅模式，在rabbitmq中就是Exchange，在kafka中就是topic。
 
-![SpringCloudStream流程图](https://github.com/jackhusky/springcloud/blob/master/images/SpringCloudStream流程图.bmp)
+![SpringCloudStream流程图](../images/SpringCloudStream流程图.bmp)
 
 Binder：很方便的链接中间件，屏蔽差异
 
@@ -2468,7 +2468,7 @@ Channel：通道，是队列Queue的一种抽象，在消息通讯系统中就�
 
 Source和Sink：简单的可理解为参考对象是Spring Cloud Stream的自身，从Stream发布信息就是输出，接受消息就是输入
 
-![SpringCloudStream常用注解](https://github.com/jackhusky/springcloud/blob/master/images/SpringCloudStream常用注解.bmp)
+![SpringCloudStream常用注解](../images/SpringCloudStream常用注解.bmp)
 
 ### 消息驱动之生产者
 
@@ -2593,7 +2593,7 @@ public class ReceiveMessageListenerController {
 
 如何解决？**分组和持久化属性group**
 
-![Stream消息分组](https://github.com/jackhusky/springcloud/blob/master/images/Stream消息分组.bmp)
+![Stream消息分组](../images/Stream消息分组.bmp)
 
 微服务应用放置于同一个group中,就能保证消息只会被其中一个应用消费一次.  不同的组是可以消费的,同一个组内会发生竞争关系,只有其中一个可以消费，默认是不同组。
 
@@ -2637,7 +2637,7 @@ java -jar zipkin-server-2.12.9-exec.jar
 
 一条链路通过Trace Id唯一标识，Span标识发起的请求信息（调用的链路来源）
 
-![链路图](https://github.com/jackhusky/springcloud/blob/master/images/链路图.png)
+![链路图](../images/链路图.png)
 
 ### 配置
 
